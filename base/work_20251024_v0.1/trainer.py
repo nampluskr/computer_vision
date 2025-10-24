@@ -222,11 +222,12 @@ class BaseTrainer(ABC):
             return False
 
         score = train_outputs[monitor_key]
+        best_score = self.train_early_stopper.best_score
         if self.train_early_stopper(score):
             if self.train_early_stopper.target_reached:
                 self.logger.info(f"Target train {monitor_key} reached: {score:.3f}")
             else:
-                self.logger.info(f"Early stopping - Best train {monitor_key}: {self.train_early_stopper.best_score:.3f}")
+                self.logger.info(f"Early stopping - Best train {monitor_key}: {best_score:.3f}")
             return True
         return False
 
@@ -241,13 +242,14 @@ class BaseTrainer(ABC):
             return False
 
         score = valid_outputs[monitor_key]
+        best_score = self.valid_early_stopper.best_score
         is_best = False
-        if self.valid_early_stopper.best_score is None:
+        if best_score is None:
             is_best = True
         elif self.valid_early_stopper.mode == 'max':
-            is_best = score > self.valid_early_stopper.best_score
+            is_best = score > best_score
         else:
-            is_best = score < self.valid_early_stopper.best_score
+            is_best = score < best_score
 
         if is_best:
             self.best_model_state = deepcopy(self.model.state_dict())
@@ -256,7 +258,7 @@ class BaseTrainer(ABC):
             if self.valid_early_stopper.target_reached:
                 self.logger.info(f"Target valid {monitor_key} reached: {score:.3f}")
             else:
-                self.logger.info(f"Early stopping - Best valid {monitor_key}: {self.valid_early_stopper.best_score:.3f}")
+                self.logger.info(f"Early stopping - Best valid {monitor_key}: {best_score:.3f}")
             return True
         return False
 

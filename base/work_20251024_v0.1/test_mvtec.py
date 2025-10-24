@@ -2,7 +2,6 @@
 
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 from torchmetrics.image import StructuralSimilarityIndexMeasure
@@ -171,8 +170,7 @@ class AnomalyTrainer(BaseTrainer):
 
         self.auroc_metric.update(anomaly_scores, labels)
         self.aupr_metric.update(anomaly_scores, labels)
-
-        return dict(auroc=torch.tensor(0.0))
+        return dict(auroc=torch.tensor(0.0), aupr=torch.tensor(0.0))
 
     def on_validation_epoch_end(self, outputs):
         auroc_value = self.auroc_metric.compute()
@@ -181,17 +179,14 @@ class AnomalyTrainer(BaseTrainer):
         outputs['auroc'] = auroc_value.item()
         outputs['aupr'] = aupr_value.item()
         
-        self._update_history(outputs)
-        valid_info = ", ".join([f"{k}:{v:.3f}" for k, v in outputs.items()])
-        time_info = self._format_time(time() - self.epoch_start_time)
-        self.logger.info(f"{self.epoch_info} {self.train_info} | (val) {valid_info} ({time_info})")
+        super().on_validation_epoch_end(outputs)
         
         self.auroc_metric.reset()
         self.aupr_metric.reset()
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.model.parameters(), lr=0.001)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
         return dict(optimizer=optimizer, scheduler=scheduler)
 
     def configure_early_stoppers(self):

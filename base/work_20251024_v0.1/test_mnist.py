@@ -2,14 +2,12 @@
 
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 from torchmetrics.classification import MulticlassAccuracy
 import gzip
 import numpy as np
 import os
-from time import time
 from trainer import BaseTrainer, EarlyStopper, set_logger
 
 
@@ -103,8 +101,8 @@ class ClassificationTrainer(BaseTrainer):
         return dict(loss=loss, acc=acc)
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.model.parameters(), lr=0.001)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
         return dict(optimizer=optimizer, scheduler=scheduler)
 
     def configure_early_stoppers(self):
