@@ -87,7 +87,6 @@ class BaseTrainer(ABC):
         self.model = model.to(self.device)
         self.loss_fn = loss_fn.to(self.device) if isinstance(loss_fn, nn.Module) else loss_fn
 
-        self.current_epoch = 0
         self.global_step = 0
         self.training = True
         self.best_model_state = None
@@ -117,8 +116,7 @@ class BaseTrainer(ABC):
     def configure_early_stoppers(self):
         return None
 
-    def on_train_epoch_start(self, epoch):
-        self.current_epoch = epoch
+    def on_train_epoch_start(self):
         self.model.train()
         self.training = True
         self.epoch_start_time = time()
@@ -147,8 +145,9 @@ class BaseTrainer(ABC):
     def on_validation_batch_start(self, batch, batch_idx): pass
     def on_validation_batch_end(self, outputs, batch, batch_idx): pass
 
-    def on_fit_start(self, output_dir):
-        self.output_dir = output_dir
+    def on_fit_start(self):
+        if self.output_dir is not None:
+            os.makedirs(self.output_dir, exist_ok=True)
         self.fit_start_time = time()
         self.history = {"train": {}, "valid": {}}
         self._setup_optimizers()
@@ -156,11 +155,11 @@ class BaseTrainer(ABC):
 
         self.logger.info(f"Starting training on device: {self.device}")
         self.logger.info(f"Model: {self.model.__class__.__name__}")
-        self.logger.info("-" * 50)
+        self.logger.info("-" * 70)
 
     def on_fit_end(self):
         self.total_time = time() - self.fit_start_time
-        self.logger.info("-" * 50)
+        self.logger.info("-" * 70)
         self.logger.info(f"Total training time: {self._format_time(self.total_time)}")
 
         if self.best_model_state is not None and self.output_dir is not None:
@@ -332,12 +331,13 @@ class BaseTrainer(ABC):
     def fit(self, train_loader, num_epochs, valid_loader=None, output_dir=None, run_name=None):
         self.has_valid_loader = valid_loader is not None
         self.num_epochs = num_epochs
+        self.output_dir = output_dir
         self.run_name = run_name or "best_model"
-        self.on_fit_start(output_dir)
+        self.on_fit_start()
 
         for epoch in range(1, num_epochs + 1):
             self.epoch = epoch
-            self.on_train_epoch_start(epoch)
+            self.on_train_epoch_start()
             train_outputs = self._train_epoch(train_loader)
 
             self.on_train_epoch_end(train_outputs)
