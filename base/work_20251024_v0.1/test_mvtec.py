@@ -12,7 +12,7 @@ import os
 import glob
 from PIL import Image
 from time import time
-from trainer import BaseTrainer, EarlyStopper
+from trainer import BaseTrainer, EarlyStopper, set_logger
 
 
 class MVTecDataset(Dataset):
@@ -133,10 +133,10 @@ class SimpleAutoencoder(nn.Module):
     def forward(self, images):
         latent = self.encoder(images)
         reconstructed = self.decoder(latent)
-
+        
         if self.training:
             return reconstructed, latent
-
+        
         anomaly_map = torch.mean((images - reconstructed)**2, dim=1, keepdim=True)
         pred_score = torch.amax(anomaly_map, dim=(-2, -1))
         return dict(pred_score=pred_score, anomaly_map=anomaly_map)
@@ -171,17 +171,21 @@ class AnomalyTrainer(BaseTrainer):
 
         self.auroc_metric.update(anomaly_scores, labels)
         self.aupr_metric.update(anomaly_scores, labels)
-        return dict(auroc=torch.tensor(0.0), aupr=torch.tensor(0.0))
+
+        return dict(auroc=torch.tensor(0.0))
 
     def on_validation_epoch_end(self, outputs):
         auroc_value = self.auroc_metric.compute()
         aupr_value = self.aupr_metric.compute()
-
+        
         outputs['auroc'] = auroc_value.item()
         outputs['aupr'] = aupr_value.item()
-
-        super().on_validation_epoch_end(outputs)
-
+        
+        self._update_history(outputs)
+        valid_info = ", ".join([f"{k}:{v:.3f}" for k, v in outputs.items()])
+        time_info = self._format_time(time() - self.epoch_start_time)
+        self.logger.info(f"{self.epoch_info} {self.train_info} | (val) {valid_info} ({time_info})")
+        
         self.auroc_metric.reset()
         self.aupr_metric.reset()
 
@@ -203,13 +207,16 @@ def main():
     batch_size = 32
     num_epochs = 10
     output_dir = "./logs_mvtec"
+    run_name = f"mvtec_{category}_ae"
 
-    print("Loading MVTec dataset...")
+    logger = set_logger(output_dir, run_name)
+
+    logger.info("Loading MVTec dataset...")
     train_dataset = MVTecDataset(root_dir, category=category, split="train")
     valid_dataset = MVTecDataset(root_dir, category=category, split="test")
     
-    print(f"Train samples: {len(train_dataset)}")
-    print(f"Valid samples: {len(valid_dataset)}")
+    logger.info(f"Train samples: {len(train_dataset)}")
+    logger.info(f"Valid samples: {len(valid_dataset)}")
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size,
         shuffle=True, num_workers=8, pin_memory=True, persistent_workers=True)
@@ -219,9 +226,9 @@ def main():
 
     model = SimpleAutoencoder(latent_dim=256)
     loss_fn = nn.MSELoss()
-    trainer = AnomalyTrainer(model, loss_fn=loss_fn)
+    trainer = AnomalyTrainer(model, loss_fn=loss_fn, logger=logger)
     trainer.fit(train_loader, num_epochs, valid_loader=valid_loader, 
-                output_dir=output_dir, run_name=f"mvtec_{category}_ae")
+                output_dir=output_dir, run_name=run_name)
 
 
 if __name__ == "__main__":

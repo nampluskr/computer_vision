@@ -10,12 +10,8 @@ import gzip
 import numpy as np
 import os
 from time import time
-from trainer import BaseTrainer, EarlyStopper
+from trainer import BaseTrainer, EarlyStopper, set_logger
 
-
-#############################################################
-# MNIST Dataset
-#############################################################
 
 class MNISTDataset(Dataset):
     def __init__(self, root_dir, split="train", transform=None):
@@ -29,7 +25,6 @@ class MNISTDataset(Dataset):
             images_file = os.path.join(root_dir, 't10k-images-idx3-ubyte.gz')
             labels_file = os.path.join(root_dir, 't10k-labels-idx1-ubyte.gz')
 
-        # images
         with gzip.open(images_file, 'rb') as file:
             file.read(16)
             buffer = file.read()
@@ -39,14 +34,12 @@ class MNISTDataset(Dataset):
             else:
                 images = images.reshape(10000, 28, 28)
 
-        # labels
         with gzip.open(labels_file, 'rb') as file:
             file.read(8)
             buffer = file.read()
             labels = np.frombuffer(buffer, dtype=np.uint8)
 
-        # numpy array로 저장 (H, W) 형태로 유지
-        self.images = (images.astype(np.float32) / 255.0)  # (N, 28, 28)
+        self.images = (images.astype(np.float32) / 255.0)
         self.labels = labels
 
     def __len__(self):
@@ -58,24 +51,18 @@ class MNISTDataset(Dataset):
         return dict(image=image, label=label)
 
 
-#############################################################
-# Simple CNN Model
-#############################################################
-
 class SimpleCNN(nn.Module):
     def __init__(self, num_classes=10):
         super(SimpleCNN, self).__init__()
 
         self.features = nn.Sequential(
-            # Conv1: 1 -> 32
             nn.Conv2d(1, 32, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # 28x28 -> 14x14
+            nn.MaxPool2d(kernel_size=2, stride=2),
 
-            # Conv2: 32 -> 64
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # 14x14 -> 7x7
+            nn.MaxPool2d(kernel_size=2, stride=2),
         )
 
         self.classifier = nn.Sequential(
@@ -91,10 +78,6 @@ class SimpleCNN(nn.Module):
         x = self.classifier(x)
         return x
 
-
-#############################################################
-# Classification Trainer
-#############################################################
 
 class ClassificationTrainer(BaseTrainer):
     def __init__(self, model, num_classes=10, **kwargs):
@@ -132,35 +115,34 @@ class ClassificationTrainer(BaseTrainer):
 
 
 
-#############################################################
-# Main
-#############################################################
-
 def main():
 
     root_dir = "/mnt/d/datasets/mnist"
     batch_size = 128
     num_epochs = 10
     output_dir = "./logs_mnist"
+    run_name = "mnist_cnn"
 
-    print("Loading MNIST dataset...")
+    logger = set_logger(output_dir, run_name)
+
+    logger.info("Loading MNIST dataset...")
     train_dataset = MNISTDataset(root_dir, split="train")
     valid_dataset = MNISTDataset(root_dir, split="test")
 
-    print(f"Train samples: {len(train_dataset)}")
-    print(f"Valid samples: {len(valid_dataset)}")
+    logger.info(f"Train samples: {len(train_dataset)}")
+    logger.info(f"Valid samples: {len(valid_dataset)}")
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size,
-        shuffle=True, num_workers=2, pin_memory=True)
+        shuffle=True, num_workers=8, pin_memory=True, persistent_workers=True)
 
     valid_loader = DataLoader(valid_dataset, batch_size=batch_size,
-        shuffle=False, num_workers=2, pin_memory=True)
+        shuffle=False, num_workers=8, pin_memory=True, persistent_workers=True)
 
     model = SimpleCNN(num_classes=10)
     loss_fn = nn.CrossEntropyLoss()
-    trainer = ClassificationTrainer(model, num_classes=10, loss_fn=loss_fn)
+    trainer = ClassificationTrainer(model, num_classes=10, loss_fn=loss_fn, logger=logger)
     trainer.fit(train_loader, num_epochs, valid_loader=valid_loader, 
-                output_dir=output_dir, run_name="mnist_cnn")
+                output_dir=output_dir, run_name=run_name)
 
 
 if __name__ == "__main__":

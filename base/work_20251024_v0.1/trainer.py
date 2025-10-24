@@ -11,6 +11,26 @@ import os
 import logging
 
 
+def set_logger(output_dir, run_name):
+    logger = logging.getLogger(run_name)
+    logger.setLevel(logging.INFO)
+
+    if not logger.handlers:
+        console_formatter = logging.Formatter('%(message)s')
+        file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(console_formatter)
+        logger.addHandler(console_handler)
+
+        os.makedirs(output_dir, exist_ok=True)
+        file_handler = logging.FileHandler(os.path.join(output_dir, f"{run_name}_training.log"))
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
+
+    return logger
+
+
 class EarlyStopper:
     def __init__(self, patience=10, min_delta=1e-3, mode='max', target_value=None, monitor='loss'):
         self.patience = patience
@@ -60,7 +80,7 @@ class EarlyStopper:
 
 
 class BaseTrainer(ABC):
-    def __init__(self, model, loss_fn=None, device=None):
+    def __init__(self, model, loss_fn=None, device=None, logger=None):
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if model is None:
             raise ValueError("Model must be provided")
@@ -71,6 +91,17 @@ class BaseTrainer(ABC):
         self.global_step = 0
         self.training = True
         self.best_model_state = None
+
+        if logger is None:
+            console_logger = logging.getLogger(f"Trainer_{id(self)}")
+            console_logger.setLevel(logging.INFO)
+            if not console_logger.handlers:
+                console_handler = logging.StreamHandler()
+                console_handler.setFormatter(logging.Formatter('%(message)s'))
+                console_logger.addHandler(console_handler)
+            self.logger = console_logger
+        else:
+            self.logger = logger
 
     @abstractmethod
     def training_step(self, batch, batch_idx):
@@ -122,7 +153,7 @@ class BaseTrainer(ABC):
         self.history = {"train": {}, "valid": {}}
         self._setup_optimizers()
         self._setup_early_stoppers()
-        self.logger = self._setup_logger(output_dir)
+
         self.logger.info(f"Starting training on device: {self.device}")
         self.logger.info(f"Model: {self.model.__class__.__name__}")
         self.logger.info("-" * 50)
@@ -144,27 +175,6 @@ class BaseTrainer(ABC):
         for key, value in outputs.items():
             self.history[history_key].setdefault(key, [])
             self.history[history_key][key].append(value)
-
-    def _setup_logger(self, output_dir):
-        logger = logging.getLogger(f"Trainer_{id(self)}")
-        logger.setLevel(logging.INFO)
-
-        if not logger.handlers:
-            console_formatter = logging.Formatter('%(message)s')
-            file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-
-            console_handler = logging.StreamHandler()
-            console_handler.setFormatter(console_formatter)
-            logger.addHandler(console_handler)
-
-            if output_dir is not None:
-                if not os.path.exists(output_dir):
-                    os.makedirs(output_dir)
-                file_handler = logging.FileHandler(os.path.join(output_dir, "training.log"))
-                file_handler.setFormatter(file_formatter)
-                logger.addHandler(file_handler)
-
-        return logger
 
     def _setup_optimizers(self):
         optimizer_config = self.configure_optimizers()
