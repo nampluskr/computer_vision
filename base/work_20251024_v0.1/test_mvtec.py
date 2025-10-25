@@ -11,7 +11,7 @@ import os
 import glob
 from PIL import Image
 from time import time
-from trainer import BaseTrainer, EarlyStopper, set_logger
+from trainer import BaseTrainer, EarlyStopper, set_seed, set_logger
 
 
 class MVTecDataset(Dataset):
@@ -199,11 +199,13 @@ class AnomalyTrainer(BaseTrainer):
 def main():
     root_dir = "/mnt/d/datasets/mvtec"
     category = "bottle"
-    batch_size = 32
+    batch_size = 16
     num_epochs = 10
-    output_dir = "./logs_mvtec"
+    output_dir = "./outputs_mvtec"
     run_name = f"mvtec_{category}_ae"
+    seed = 42
 
+    set_seed(seed)
     logger = set_logger(output_dir, run_name)
 
     logger.info("Loading MVTec dataset...")

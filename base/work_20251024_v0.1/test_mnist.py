@@ -8,7 +8,7 @@ from torchmetrics.classification import MulticlassAccuracy
 import gzip
 import numpy as np
 import os
-from trainer import BaseTrainer, EarlyStopper, set_logger
+from trainer import BaseTrainer, EarlyStopper, set_seed, set_logger
 
 
 class MNISTDataset(Dataset):
@@ -118,9 +118,11 @@ def main():
     root_dir = "/mnt/d/datasets/mnist"
     batch_size = 128
     num_epochs = 10
-    output_dir = "./logs_mnist"
+    output_dir = "./outputs_mnist"
     run_name = "mnist_cnn"
+    seed = 42
 
+    set_seed(seed)
     logger = set_logger(output_dir, run_name)
 
     logger.info("Loading MNIST dataset...")

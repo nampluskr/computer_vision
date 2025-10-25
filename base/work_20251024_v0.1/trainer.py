@@ -1,14 +1,25 @@
 """" filename: trainer.py """
-
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
 from abc import ABC, abstractmethod
 from tqdm import tqdm
 from time import time
 from copy import deepcopy
 import os
 import logging
+import random
+import numpy as np
+
+import torch
+import torch.nn as nn
+
+
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    os.environ["PYTHONHASHSEED"] = str(seed)
 
 
 def set_logger(output_dir, run_name):
@@ -88,8 +99,10 @@ class BaseTrainer(ABC):
         self.loss_fn = loss_fn.to(self.device) if isinstance(loss_fn, nn.Module) else loss_fn
 
         self.global_step = 0
+        self.global_epoch = 0
         self.training = True
         self.best_model_state = None
+        self.history = {"train": {}, "valid": {}}
 
         if logger is None:
             console_logger = logging.getLogger(f"Trainer_{id(self)}")
@@ -119,6 +132,8 @@ class BaseTrainer(ABC):
     def on_train_epoch_start(self):
         self.model.train()
         self.training = True
+
+        self.global_epoch += 1
         self.epoch_start_time = time()
         self.epoch_info = f"[{self.epoch:3d}/{self.num_epochs}]"
 
@@ -149,7 +164,6 @@ class BaseTrainer(ABC):
         if self.output_dir is not None:
             os.makedirs(self.output_dir, exist_ok=True)
         self.fit_start_time = time()
-        self.history = {"train": {}, "valid": {}}
         self._setup_optimizers()
         self._setup_early_stoppers()
 
@@ -163,7 +177,7 @@ class BaseTrainer(ABC):
         self.logger.info(f"Total training time: {self._format_time(self.total_time)}")
 
         if self.best_model_state is not None and self.output_dir is not None:
-            best_model_path = os.path.join(self.output_dir, f"{self.run_name}_epoch-{self.epoch}.pth")
+            best_model_path = os.path.join(self.output_dir, f"{self.run_name}_epoch-{self.global_epoch}.pth")
             torch.save(self.best_model_state, best_model_path)
             self.logger.info(f"Best model saved to: {best_model_path}")
 
@@ -209,6 +223,23 @@ class BaseTrainer(ABC):
             return f"{minutes}m {secs}s"
         else:
             return f"{secs}s"
+
+    def _update_scheduler(self):
+        if self.optimizer is None or self.scheduler is None:
+            return
+
+        old_lrs = [group['lr'] for group in self.optimizer.param_groups]
+        self.scheduler.step()
+        new_lrs = [group['lr'] for group in self.optimizer.param_groups]
+
+        lr_threshold = 1e-8
+        if len(new_lrs) == 1:
+            if abs(old_lrs[0] - new_lrs[0]) > lr_threshold:
+                self.logger.info(f"Learning rate updated: {old_lrs[0]:.3e} -> {new_lrs[0]:.3e}")
+        else:
+            for idx, (old_lr, new_lr) in enumerate(zip(old_lrs, new_lrs)):
+                if abs(old_lr - new_lr) > lr_threshold:
+                    self.logger.info(f"Learning rate [group {idx}] updated: {old_lr:.3e} -> {new_lr:.3e}")
 
     def _check_train_stopping(self, train_outputs):
         if self.train_early_stopper is None:
@@ -293,8 +324,8 @@ class BaseTrainer(ABC):
                     accumulated_outputs[name] += value * batch_size
 
                 progress_bar.set_postfix({
-                    name: f"{total_value / total_images:.3f}"
-                    for name, total_value in accumulated_outputs.items()
+                    name: f"{value / total_images:.3f}"
+                    for name, value in accumulated_outputs.items()
                 })
                 self.on_train_batch_end(outputs, batch, batch_idx)
 
@@ -352,38 +383,52 @@ class BaseTrainer(ABC):
                 if self._check_valid_stopping(valid_outputs):
                     break
 
-            if self.scheduler is not None:
-                self.scheduler.step()
+            self._update_scheduler()
 
         self.on_fit_end()
-
         return self.history
 
     def save_checkpoint(self, filepath):
+        output_dir = os.path.dirname(filepath)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+
         checkpoint = {
             "model_state_dict": self.model.state_dict(),
             "global_step": self.global_step,
-            "current_epoch": self.current_epoch,
+            "global_epoch": self.global_epoch,
+            "history": self.history,
         }
         if self.optimizer is not None:
             checkpoint["optimizer_state_dict"] = self.optimizer.state_dict()
+
         if self.scheduler is not None:
             checkpoint["scheduler_state_dict"] = self.scheduler.state_dict()
+
         torch.save(checkpoint, filepath)
         self.logger.info(f"Checkpoint saved: {filepath}")
 
     def load_checkpoint(self, filepath, strict=True):
         checkpoint = torch.load(filepath, map_location=self.device)
         self.model.load_state_dict(checkpoint["model_state_dict"], strict=strict)
-        self.global_step = checkpoint["global_step"]
-        self.current_epoch = checkpoint["current_epoch"]
+        self.global_step = checkpoint.get("global_step", 0)
+        self.global_epoch = checkpoint.get("global_epoch", 0)
+        self.history = checkpoint.get("history", {"train": {}, "valid": {}})
+
         if "optimizer_state_dict" in checkpoint and self.optimizer is not None:
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
         if "scheduler_state_dict" in checkpoint and self.scheduler is not None:
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
         self.logger.info(f"Checkpoint loaded: {filepath}")
+        self.logger.info(f"Resumed from global_epoch: {self.global_epoch}, global_step: {self.global_step}")
 
     def save_model(self, filepath):
+        output_dir = os.path.dirname(filepath)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+
         torch.save(self.model.state_dict(), filepath)
         self.logger.info(f"Model saved: {filepath}")
 
