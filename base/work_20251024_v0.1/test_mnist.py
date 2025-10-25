@@ -112,9 +112,7 @@ class ClassificationTrainer(BaseTrainer):
         )
 
 
-
 def main():
-
     root_dir = "/mnt/d/datasets/mnist"
     batch_size = 128
     num_epochs = 10
