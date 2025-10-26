@@ -328,10 +328,10 @@ class EfficientAdModel(nn.Module):
 import os
 import torch
 from tqdm import tqdm
-from pathlib import Path
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
 from torchvision import transforms as T
+from torchmetrics.classification import BinaryAUROC, BinaryAveragePrecision
 
 from .components.trainer import BaseTrainer, EarlyStopper
 from .components.backbone import get_backbone_dir
@@ -340,32 +340,27 @@ from .components.backbone import get_backbone_dir
 class EfficientAdTrainer(BaseTrainer):
 
     def __init__(self, model=None, loss_fn=None, device=None, logger=None,
-                 learning_rate=1e-4, weight_decay=1e-5, model_size="small",
-                 imagenet_dir=None, teacher_out_channels=384):
+                 learning_rate=1e-4, model_size="small", teacher_out_channels=384):
 
         if model is None:
             model = EfficientAdModel(
-                teacher_out_channels=teacher_out_channels,
                 model_size=EfficientAdModelSize.S if model_size == "small" else EfficientAdModelSize.M,
-                padding=False,
-                pad_maps=True
-            )
+                teacher_out_channels=teacher_out_channels,
+                padding=False, pad_maps=True)
 
         super().__init__(model, loss_fn=None, device=device, logger=logger)
 
         self.lr = learning_rate
-        self.weight_decay = weight_decay
         self.model_size = model_size
-        self.teacher_out_channels = teacher_out_channels
+        self.teature_out_channels = teacher_out_channels
 
-        if imagenet_dir is None:
-            data_dir = os.getenv('DATA_DIR', '/mnt/d/datasets')
-            imagenet_dir = os.path.join(data_dir, 'imagenette2')
-        self.imagenet_dir = Path(imagenet_dir)
+        self.imagenet_dir = os.path.join(os.getenv('DATA_DIR', '/mnt/d/datasets'), 'imagenette2')
         self.imagenet_loader = None
         self.imagenet_iterator = None
 
         self.backbone_dir = os.getenv('BACKBONE_DIR', '/mnt/d/backbones')
+
+        self.optimizer = self.configure_optimizers()['optimizer']
         self.scheduler_step_ratio = 0.95
         self.scheduler_gamma = 0.1
 
@@ -487,7 +482,7 @@ class EfficientAdTrainer(BaseTrainer):
 
     def configure_optimizers(self):
         params = list(self.model.student.parameters()) + list(self.model.ae.parameters())
-        optimizer = torch.optim.Adam(params, lr=self.lr, weight_decay=self.weight_decay)
+        optimizer = torch.optim.Adam(params, lr=self.lr, weight_decay=1e-5)
         # Scheduler will be created in fit() when num_epochs is known
         return dict(optimizer=optimizer)
 
@@ -527,7 +522,7 @@ class EfficientAdTrainer(BaseTrainer):
     def _load_pretrained_teacher(self):
         backbone_dir = Path(self.backbone_dir)
 
-        if not backbone_dir.is_dir():
+        if not os.path.isdir(backbone_dir):
             raise RuntimeError(
                 f"Backbone directory not found: {backbone_dir}\n"
                 f"Please download pretrained weights and place them in this directory."
@@ -536,7 +531,7 @@ class EfficientAdTrainer(BaseTrainer):
         model_size_str = self.model_size
         teacher_path = backbone_dir / f"pretrained_teacher_{model_size_str}.pth"
 
-        if not teacher_path.is_file():
+        if not os.path.isfile(teacher_path):
             raise RuntimeError(
                 f"Teacher weight file not found: {teacher_path}\n"
                 f"Expected files in {backbone_dir}:\n"
@@ -551,7 +546,7 @@ class EfficientAdTrainer(BaseTrainer):
 
     def _prepare_imagenet_data(self, image_size: tuple[int, int]):
         """Prepare Imagenette dataset loader"""
-        if not self.imagenet_dir.is_dir():
+        if not os.path.isdir(self.imagenet_dir):
             raise RuntimeError(
                 f"Imagenette directory not found: {self.imagenet_dir}\n"
                 f"Please download Imagenette2 dataset from:\n"
