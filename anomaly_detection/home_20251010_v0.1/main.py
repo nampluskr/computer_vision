@@ -52,9 +52,10 @@ if __name__ == "__main__":
         show_globals=True
     )
 
+    train("mvtec", "tile", "stfpm", num_epochs=20)
     # train("mvtec", "tile", "draem")
     # train("mvtec", "tile", "uninet-temp-0.2")
-    train("mvtec", "grid", "dinomaly-base-392")
+    # train("mvtec", "grid", "dinomaly-base-392")
 
 
     # train("mvtec", "grid", "fastflow")
