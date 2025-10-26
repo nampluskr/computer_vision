@@ -1,9 +1,13 @@
+""" filename: models/autoencoder.py """
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.nn import functional as F
 
 from torchmetrics.image import StructuralSimilarityIndexMeasure
+
+from models.components.trainer import AnomalyTrainer, EarlyStopper
 
 
 ###########################################################
@@ -33,7 +37,7 @@ class DeconvBlock(nn.Module):
         return self.deconv_block(x)
 
 
-class Autoencoder(nn.Module):
+class _Autoencoder(nn.Module):
     def __init__(self, in_channels=3, out_channels=3, latent_dim=256, img_size=256):
         super().__init__()
         self.encoder = nn.Sequential(
@@ -61,10 +65,59 @@ class Autoencoder(nn.Module):
         latent = self.to_linear(latent)
         latent = self.from_linear(latent)
         recon = self.decoder(latent)
-        
+
         if self.training:
             return recon, latent
-        
+
+        anomaly_map = torch.mean((images - recon)**2, dim=1, keepdim=True)
+        pred_score = torch.amax(anomaly_map, dim=(-2, -1))
+        return dict(pred_score=pred_score, anomaly_map=anomaly_map)
+
+
+class Autoencoder(nn.Module):
+    def __init__(self, latent_dim=256):
+        super().__init__()
+
+        self.encoder = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+        )
+
+        self.to_linear = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(256 * 16 * 16, latent_dim)
+        )
+        self.from_linear = nn.Sequential(
+            nn.Linear(latent_dim, 256 * 16 * 16),
+            nn.ReLU(inplace=True),
+            nn.Unflatten(1, (256, 16, 16)),
+        )
+
+        self.decoder = nn.Sequential(
+            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(32, 3, kernel_size=4, stride=2, padding=1)
+        )
+
+    def forward(self, images):
+        latent = self.encoder(images)
+        latent = self.to_linear(latent)
+        latent = self.from_linear(latent)
+        recon = self.decoder(latent)
+
+        if self.training:
+            return recon, latent
+
         anomaly_map = torch.mean((images - recon)**2, dim=1, keepdim=True)
         pred_score = torch.amax(anomaly_map, dim=(-2, -1))
         return dict(pred_score=pred_score, anomaly_map=anomaly_map)
@@ -129,7 +182,35 @@ class SSIMMetric(nn.Module):
 #############################################################
 # Trainer for Autoencoder Model
 #############################################################
-from .components.trainer import BaseTrainer, EarlyStopper
 
-class AutoencoderTrainer(BaseTrainer):
-    pass
+class AutoencoderTrainer(AnomalyTrainer):
+
+    def __init__(self, model, loss_fn=None, device=None, logger=None, learning_rate=1e-3):
+        if loss_fn is None:
+            loss_fn = AELoss()
+
+        super().__init__(model, loss_fn=loss_fn, device=device, logger=logger)
+        
+        self.lr = learning_rate
+        self.ssim_metric = SSIMMetric(data_range=2.0, reduction='mean').to(self.device)
+
+    def training_step(self, batch, batch_idx):
+        images = batch['image'].to(self.device)
+        recon, latent = self.model(images)
+        loss = self.loss_fn(recon, images)
+
+        with torch.no_grad():
+            ssim_value = self.ssim_metric(recon, images)
+
+        return dict(loss=loss, ssim=ssim_value)
+
+    def configure_optimizers(self):
+        optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=1e-5)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+        return dict(optimizer=optimizer, scheduler=scheduler)
+
+    def configure_early_stoppers(self):
+        return dict(
+            train=EarlyStopper(patience=5, mode='min', min_delta=1e-4, monitor='loss'),
+            valid=EarlyStopper(patience=5, mode='max', min_delta=1e-3, target_value=0.95, monitor='auroc')
+        )
