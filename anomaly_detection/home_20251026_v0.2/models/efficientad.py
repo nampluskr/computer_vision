@@ -354,18 +354,18 @@ class EfficientAdTrainer(BaseTrainer):
         self.model_size = model_size
         self.teature_out_channels = teacher_out_channels
 
+        self.backbone_dir = os.getenv('BACKBONE_DIR', '/mnt/d/backbones')
         self.imagenet_dir = os.path.join(os.getenv('DATA_DIR', '/mnt/d/datasets'), 'imagenette2')
         self.imagenet_loader = None
         self.imagenet_iterator = None
 
-        self.backbone_dir = os.getenv('BACKBONE_DIR', '/mnt/d/backbones')
-
-        self.optimizer = self.configure_optimizers()['optimizer']
         self.scheduler_step_ratio = 0.95
         self.scheduler_gamma = 0.1
 
         self.auroc_metric = BinaryAUROC().to(self.device)
         self.aupr_metric = BinaryAveragePrecision().to(self.device)
+
+        self.quantiles_computed = False
 
     def training_step(self, batch, batch_idx):
         images = batch['image'].to(self.device)
@@ -417,6 +417,12 @@ class EfficientAdTrainer(BaseTrainer):
     def on_validation_epoch_start(self):
         super().on_validation_epoch_start()
 
+        # Recompute quantiles EVERY validation epoch (not just first time)
+        if hasattr(self, '_current_valid_loader') and self._current_valid_loader is not None:
+            map_norm_quantiles = self._compute_quantiles(self._current_valid_loader)
+            self.model.quantiles.update(map_norm_quantiles)
+
+        # Reset metrics
         self.auroc_metric.reset()
         self.aupr_metric.reset()
 
@@ -468,22 +474,9 @@ class EfficientAdTrainer(BaseTrainer):
 
             self.logger.info("="*70)
 
-    def on_validation_start(self):
-        # Check if this is being called (BaseTrainer doesn't have this hook)
-        # If validation loader exists and quantiles not set
-        if hasattr(self, '_current_valid_loader') and self._current_valid_loader is not None:
-            if not self.model.is_set(self.model.quantiles):
-                self.logger.info("="*70)
-                self.logger.info("Computing validation quantiles...")
-                map_norm_quantiles = self._compute_quantiles(self._current_valid_loader)
-                self.model.quantiles.update(map_norm_quantiles)
-                self.logger.info("Quantiles computed successfully")
-                self.logger.info("="*70)
-
     def configure_optimizers(self):
         params = list(self.model.student.parameters()) + list(self.model.ae.parameters())
         optimizer = torch.optim.Adam(params, lr=self.lr, weight_decay=1e-5)
-        # Scheduler will be created in fit() when num_epochs is known
         return dict(optimizer=optimizer)
 
     def configure_early_stoppers(self):
@@ -492,27 +485,25 @@ class EfficientAdTrainer(BaseTrainer):
             valid=EarlyStopper(patience=10, mode='max', min_delta=0.001, target_value=0.995, monitor='auroc')
         )
 
+    def on_fit_start(self):
+        super().on_fit_start()
+        
+        if hasattr(self, '_current_train_loader'):
+            steps_per_epoch = len(self._current_train_loader)
+            total_steps = self.num_epochs * steps_per_epoch
+            step_size = int(self.scheduler_step_ratio * total_steps)
+            
+            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
+                step_size=step_size, gamma=self.scheduler_gamma)
+            self.logger.info(
+                f"Scheduler: StepLR(step_size={step_size}/{total_steps}, "
+                f"gamma={self.scheduler_gamma})"
+            )
+
     def fit(self, train_loader, num_epochs, valid_loader=None, output_dir=None, run_name=None):
-        # Store loaders for access in hooks
         self._current_train_loader = train_loader
         self._current_valid_loader = valid_loader
 
-        # Create scheduler now that we know num_epochs
-        # Calculate total training steps
-        steps_per_epoch = len(train_loader)
-        total_steps = num_epochs * steps_per_epoch
-        step_size = int(self.scheduler_step_ratio * total_steps)
-
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,
-            step_size=step_size, gamma=self.scheduler_gamma)
-        self.logger.info(f"Scheduler: StepLR(step_size={step_size}/{total_steps}, "
-                         f"gamma={self.scheduler_gamma})")
-
-        # Manually trigger on_validation_start before first validation
-        if valid_loader is not None:
-            self.on_validation_start()
-
-        # Call parent fit
         return super().fit(train_loader, num_epochs, valid_loader, output_dir, run_name)
 
     #############################################################
@@ -520,21 +511,20 @@ class EfficientAdTrainer(BaseTrainer):
     #############################################################
 
     def _load_pretrained_teacher(self):
-        backbone_dir = Path(self.backbone_dir)
-
-        if not os.path.isdir(backbone_dir):
+        """Load pretrained teacher model"""
+        if not os.path.isdir(self.backbone_dir):
             raise RuntimeError(
-                f"Backbone directory not found: {backbone_dir}\n"
+                f"Backbone directory not found: {self.backbone_dir}\n"
                 f"Please download pretrained weights and place them in this directory."
             )
 
         model_size_str = self.model_size
-        teacher_path = backbone_dir / f"pretrained_teacher_{model_size_str}.pth"
+        teacher_path = os.path.join(self.backbone_dir, f"pretrained_teacher_{model_size_str}.pth")
 
         if not os.path.isfile(teacher_path):
             raise RuntimeError(
                 f"Teacher weight file not found: {teacher_path}\n"
-                f"Expected files in {backbone_dir}:\n"
+                f"Expected files in {self.backbone_dir}:\n"
                 f"  - pretrained_teacher_small.pth\n"
                 f"  - pretrained_teacher_medium.pth"
             )
@@ -565,7 +555,7 @@ class EfficientAdTrainer(BaseTrainer):
         imagenet_dataset = ImageFolder(self.imagenet_dir, transform=data_transforms)
         self.imagenet_loader = DataLoader(
             imagenet_dataset,
-            batch_size=1,  # EfficientAD uses batch_size=1
+            batch_size=1,
             shuffle=True,
             num_workers=4,
             pin_memory=True
@@ -575,6 +565,7 @@ class EfficientAdTrainer(BaseTrainer):
 
     @torch.no_grad()
     def _compute_teacher_statistics(self, dataloader: DataLoader) -> dict[str, torch.Tensor]:
+        """Compute mean and std of teacher output channels"""
         arrays_defined = False
         n = None
         channel_sum = None
@@ -607,6 +598,10 @@ class EfficientAdTrainer(BaseTrainer):
 
     @torch.no_grad()
     def _compute_quantiles(self, dataloader: DataLoader) -> dict[str, torch.Tensor]:
+        """
+        Compute quantiles for map normalization
+        CRITICAL: This should be called EVERY validation epoch
+        """
         maps_st = []
         maps_ae = []
 
@@ -622,7 +617,6 @@ class EfficientAdTrainer(BaseTrainer):
 
         if not maps_st:
             self.logger.warning("No normal samples found in validation set!")
-            # Return dummy quantiles
             return {
                 "qa_st": torch.tensor(0.0).to(self.device),
                 "qb_st": torch.tensor(1.0).to(self.device),
@@ -630,12 +624,21 @@ class EfficientAdTrainer(BaseTrainer):
                 "qb_ae": torch.tensor(1.0).to(self.device)
             }
 
+        # Debug: Print statistics
+        maps_st_cat = torch.cat(maps_st)
+        maps_ae_cat = torch.cat(maps_ae)
+        self.logger.debug(f"  maps_st range: [{maps_st_cat.min():.6f}, {maps_st_cat.max():.6f}]")
+        self.logger.debug(f"  maps_ae range: [{maps_ae_cat.min():.6f}, {maps_ae_cat.max():.6f}]")
+
         qa_st, qb_st = self._get_quantiles_of_maps(maps_st)
         qa_ae, qb_ae = self._get_quantiles_of_maps(maps_ae)
+
         return {"qa_st": qa_st, "qb_st": qb_st, "qa_ae": qa_ae, "qb_ae": qb_ae}
 
     def _get_quantiles_of_maps(self, maps: list[torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
+        """Calculate 90th and 99.5th percentile of maps"""
         maps_flat = reduce_tensor_elems(torch.cat(maps))
         qa = torch.quantile(maps_flat, q=0.9).to(self.device)
         qb = torch.quantile(maps_flat, q=0.995).to(self.device)
         return qa, qb
+      
