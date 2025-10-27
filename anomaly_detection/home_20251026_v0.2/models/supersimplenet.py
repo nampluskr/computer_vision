@@ -169,6 +169,7 @@ class SSNLoss(nn.Module):
 
         return map_focal + map_trunc_l1 + score_focal
 
+
 #####################################################################
 # anomalib/src/anomalib/models/image/supersimplenet/torch_model.py
 #####################################################################
@@ -240,26 +241,6 @@ class SupersimplenetModel(nn.Module):
             torch.zeros_like(masks),
             torch.ones_like(masks),
         )
-
-    # @staticmethod
-    # def downsample_mask(masks: torch.Tensor, feat_h: int, feat_w: int) -> torch.Tensor:
-    #     masks = masks.type(torch.float32)
-
-    #     # Ensure 4D tensor [B, C, H, W]
-    #     if masks.ndim == 2:  # [H, W] → [1, 1, H, W]
-    #         masks = masks.unsqueeze(0).unsqueeze(0)
-    #     elif masks.ndim == 3:  # [B, H, W] → [B, 1, H, W]
-    #         masks = masks.unsqueeze(1)
-    #     elif masks.ndim == 4:  # Already [B, C, H, W]
-    #         if masks.shape[1] != 1:
-    #             masks = masks[:, :1, :, :]  # Take first channel only
-    #     else:
-    #         raise ValueError(f"Unexpected mask dimension: {masks.ndim}, shape: {masks.shape}")
-
-    #     # Downsample
-    #     masks = F.interpolate(masks, size=(feat_h, feat_w), mode="bilinear", align_corners=False)
-    #     return torch.where(masks < 0.5, torch.zeros_like(masks), torch.ones_like(masks))
-
 
 def init_weights(module: nn.Module) -> None:
     if isinstance(module, nn.Linear | nn.Conv2d):
@@ -617,7 +598,7 @@ class SupersimplenetTrainer(AnomalyTrainer):
         Following Lightning implementation
         """
         optimizer = torch.optim.AdamW([
-            {"params": self.model.adaptor.parameters(), "lr": 0.0001,},
+            {"params": self.model.adaptor.parameters(), "lr": 0.0001, "weight_decay": 0.00001},
             {"params": self.model.segdec.parameters(), "lr": 0.0002, "weight_decay": 0.00001},
         ])
 
