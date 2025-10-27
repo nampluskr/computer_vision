@@ -6,6 +6,7 @@ from time import time
 from copy import deepcopy
 import os
 import logging
+import warnings
 
 import torch
 import torch.nn as nn
@@ -424,10 +425,10 @@ class AnomalyTrainer(BaseTrainer):
     Base trainer for all anomaly detection models
     Subclasses must implement training_step() for their specific model
     """
-    
+
     def __init__(self, model, loss_fn=None, device=None, logger=None):
         super().__init__(model, loss_fn=loss_fn, device=device, logger=logger)
-        
+
         # Initialize metrics for validation
         self.auroc_metric = BinaryAUROC().to(self.device)
         self.aupr_metric = BinaryAveragePrecision().to(self.device)
@@ -444,7 +445,6 @@ class AnomalyTrainer(BaseTrainer):
 
     def on_validation_epoch_start(self):
         super().on_validation_epoch_start()
-        # Reset metrics at the start of each validation epoch
         self.auroc_metric.reset()
         self.aupr_metric.reset()
 
@@ -458,7 +458,7 @@ class AnomalyTrainer(BaseTrainer):
 
         # Forward pass
         outputs = self.model(images)
-        
+
         # Get anomaly scores
         if isinstance(outputs, dict):
             anomaly_scores = outputs.get('pred_score', outputs.get('anomaly_score', None))
@@ -473,7 +473,7 @@ class AnomalyTrainer(BaseTrainer):
                 anomaly_scores = torch.mean(outputs.view(outputs.size(0), -1), dim=1)
             else:
                 anomaly_scores = outputs
-        
+
         # Ensure anomaly_scores has batch dimension [B] not []
         if anomaly_scores.dim() == 0:
             # Scalar case: add batch dimension
@@ -481,33 +481,41 @@ class AnomalyTrainer(BaseTrainer):
         elif anomaly_scores.dim() > 1:
             # [B, 1, ...] -> [B]
             anomaly_scores = anomaly_scores.view(anomaly_scores.size(0), -1).mean(dim=1)
-        
+
         # Ensure labels has same shape [B]
         if labels.dim() == 0:
             labels = labels.unsqueeze(0)
         elif labels.dim() > 1:
             labels = labels.view(-1)
-        
+
         # Update metrics (accumulate across batches)
         self.auroc_metric.update(anomaly_scores, labels)
         self.aupr_metric.update(anomaly_scores, labels)
-        
-        # Return dummy values (actual values computed in on_validation_epoch_end)
-        return dict(auroc=torch.tensor(0.0), aupr=torch.tensor(0.0))
+
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore")
+                auroc = self.auroc_metric.compute()
+                aupr = self.aupr_metric.compute()
+        except:
+            auroc = torch.tensor(0.0)
+            aupr = torch.tensor(0.0)
+
+        return dict(auroc=auroc, aupr=aupr)
 
     def on_validation_epoch_end(self, outputs):
         """Compute final metrics after all validation batches"""
         # Compute accumulated metrics
         auroc_value = self.auroc_metric.compute()
         aupr_value = self.aupr_metric.compute()
-        
+
         # Update outputs with actual metric values
         outputs['auroc'] = auroc_value.item()
         outputs['aupr'] = aupr_value.item()
-        
+
         # Call parent method to log and update history
         super().on_validation_epoch_end(outputs)
-        
+
         # Reset metrics for next epoch
         self.auroc_metric.reset()
         self.aupr_metric.reset()
@@ -521,17 +529,7 @@ class AnomalyTrainer(BaseTrainer):
     def configure_early_stoppers(self):
         """Default early stopper configuration - can be overridden"""
         return dict(
-            train=EarlyStopper(
-                patience=5, 
-                mode='min', 
-                min_delta=0.001, 
-                monitor='loss'
-            ),
-            valid=EarlyStopper(
-                patience=10, 
-                mode='max', 
-                min_delta=0.001, 
-                target_value=0.95, 
-                monitor='auroc'
-            )
+            train=EarlyStopper(patience=10, mode='min', min_delta=0.001, monitor='loss'),
+            valid=EarlyStopper(patience=10, mode='max', min_delta=0.001, monitor='auroc',
+                target_value=0.95)
         )
