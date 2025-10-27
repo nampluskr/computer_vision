@@ -145,7 +145,7 @@ def register_all_models():
         model_class='models.autoencoder.Autoencoder',
         trainer_class='models.autoencoder.AutoencoderTrainer',
         model_config=dict(latent_dim=256),
-        trainer_config=dict(learning_rate=1e-3)
+        trainer_config=dict(learning_rate=1e-2)
     )
 
     # STFPM
@@ -159,11 +159,125 @@ def register_all_models():
 
     # EfficientAD
     ModelRegistry.register(
-        model_name='efficientad',
-        model_class='models.EfficientAD',
-        trainer_class='models.EfficientadTrainer',
+        model_name='efficientad-small',
+        model_class='models.efficientad.EfficientAdModel',
+        trainer_class='models.efficientad.EfficientAdTrainer',
         model_config=dict(model_size='small', teacher_out_channels=384),
-        trainer_config=dict(learning_rate=1e-4)
+        trainer_config=dict(learning_rate=1e-4, model_size="small")
+    )
+    ModelRegistry.register(
+        model_name='efficientad-medium',
+        model_class='models.efficientad.EfficientAdModel',
+        trainer_class='models.efficientad.EfficientAdTrainer',
+        model_config=dict(model_size='medium', teacher_out_channels=384),
+        trainer_config=dict(learning_rate=1e-4, model_size="medium")
+    )
+
+    # SuperSimpleNet - Unsupervised (JIMS version)
+    ModelRegistry.register(
+        model_name='supersimplenet',
+        model_class='models.supersimplenet.SupersimplenetModel',
+        trainer_class='models.supersimplenet.SupersimplenetTrainer',
+        model_config=dict(
+            perlin_threshold=0.2,
+            backbone='wide_resnet50_2.tv_in1k',
+            # backbone='wide_resnet50_2',
+            layers=['layer2', 'layer3'],
+            stop_grad=True,  # Unsupervised
+            adapt_cls_features=False  # JIMS version
+        ),
+        trainer_config=dict(
+            perlin_threshold=0.2,
+            backbone='wide_resnet50_2.tv_in1k',
+            layers=['layer2', 'layer3'],
+            supervised=False,
+            adapt_cls_features=False
+        )
+    )
+
+    # SuperSimpleNet - Unsupervised (ICPR version)
+    ModelRegistry.register(
+        model_name='supersimplenet-icpr',
+        model_class='models.supersimplenet.SupersimplenetModel',
+        trainer_class='models.supersimplenet.SupersimplenetTrainer',
+        model_config=dict(
+            perlin_threshold=0.2,
+            backbone='wide_resnet50_2.tv_in1k',
+            layers=['layer2', 'layer3'],
+            stop_grad=True,
+            adapt_cls_features=True  # ICPR version
+        ),
+        trainer_config=dict(
+            perlin_threshold=0.2,
+            backbone='wide_resnet50_2.tv_in1k',
+            layers=['layer2', 'layer3'],
+            supervised=False,
+            adapt_cls_features=True
+        )
+    )
+
+    # SuperSimpleNet - Supervised (ICPR version)
+    ModelRegistry.register(
+        model_name='supersimplenet-supervised',
+        model_class='models.supersimplenet.SupersimplenetModel',
+        trainer_class='models.supersimplenet.SupersimplenetTrainer',
+        model_config=dict(
+            perlin_threshold=0.2,
+            backbone='wide_resnet50_2.tv_in1k',
+            layers=['layer2', 'layer3'],
+            stop_grad=False,  # Supervised
+            adapt_cls_features=True  # ICPR version
+        ),
+        trainer_config=dict(
+            perlin_threshold=0.2,
+            backbone='wide_resnet50_2.tv_in1k',
+            layers=['layer2', 'layer3'],
+            supervised=True,
+            adapt_cls_features=True,
+            gradient_clip_val=1.0  # Supervised mode
+        )
+    )
+
+    # # SuperSimpleNet - ResNet50 variant
+    # ModelRegistry.register(
+    #     model_name='supersimplenet-resnet50',
+    #     model_class='models.supersimplenet.SupersimplenetModel',
+    #     trainer_class='models.supersimplenet.SupersimplenetTrainer',
+    #     model_config=dict(
+    #         perlin_threshold=0.2,
+    #         backbone='resnet50.tv_in1k',
+    #         layers=['layer2', 'layer3'],
+    #         stop_grad=True,
+    #         adapt_cls_features=False
+    #     ),
+    #     trainer_config=dict(
+    #         perlin_threshold=0.2,
+    #         backbone='resnet50.tv_in1k',
+    #         layers=['layer2', 'layer3'],
+    #         supervised=False,
+    #         adapt_cls_features=False
+    #     )
+    # )
+
+    # SuperSimpleNet - WideResNet50 with layer1,2,3
+    ModelRegistry.register(
+        model_name='supersimplenet-wide-l123',
+        model_class='models.supersimplenet.SupersimplenetModel',
+        trainer_class='models.supersimplenet.SupersimplenetTrainer',
+        model_config=dict(
+            perlin_threshold=0.2,
+            backbone='wide_resnet50_2.tv_in1k',
+            layers=['layer1', 'layer2', 'layer3'],  # More layers
+            stop_grad=True,
+            adapt_cls_features=False
+        ),
+        trainer_config=dict(
+            perlin_threshold=0.2,
+            backbone='wide_resnet50_2.tv_in1k',
+            layers=['layer1', 'layer2', 'layer3'],
+            supervised=False,
+            adapt_cls_features=False
+        )
     )
 
 
