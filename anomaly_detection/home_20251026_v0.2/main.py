@@ -1,7 +1,7 @@
 """ filename: main.py """
 import os
-os.environ['DATA_DIR'] = '/mnt/d/datasets'
-os.environ['BACKBONE_DIR'] = '/mnt/d/backbones'
+os.environ['DATA_DIR'] = '/home/namu/myspace/NAMU/datasets' 
+os.environ['BACKBONE_DIR'] = '/home/namu/myspace/NAMU/backbones'
 
 from trainers import set_seed, set_logger, get_trainer
 from transforms import get_train_transform, get_test_transform, get_mask_transform
@@ -9,11 +9,12 @@ from dataloaders import get_train_loader, get_test_loader
 
 
 def main():
-    dataset_name = 'mvtec'
-    category = 'bottle'
-    model_name = 'stfpm'
+    dataset_name = 'btad'
+    category = '01'
+    model_name = 'supersimplenet-supervised'
     img_size = 256
-    batch_size = 16
+    batch_size = 32
+    normalize = True
     num_epochs = 20
     device = 'cuda'
     seed = 42
@@ -36,8 +37,8 @@ def main():
     logger.info("="*70)
     
     # Create transforms
-    train_transform = get_train_transform(img_size=img_size)
-    test_transform = get_test_transform(img_size=img_size)
+    train_transform = get_train_transform(img_size=img_size, normalize=normalize)
+    test_transform = get_test_transform(img_size=img_size, normalize=normalize)
     mask_transform = get_mask_transform(img_size=img_size)
     
     # Create dataloaders
@@ -49,11 +50,11 @@ def main():
     )
     
     valid_loader = get_test_loader(
-        dataset_name=dataset_name,
+        dataset_name=dataset_name, 
         category=category,
         transform=test_transform,
         mask_transform=mask_transform,
-        batch_size=batch_size // 2,
+        batch_size=batch_size,
     )
     
     logger.info(f"Train dataset size: {len(train_loader.dataset)}, batch_size: {train_loader.batch_size}")
@@ -63,7 +64,7 @@ def main():
     logger.info("Trainer created")
     logger.info(f"Model parameters: {sum(p.numel() for p in trainer.model.parameters()):,}")
     
-    trainer.fit(train_loader, num_epochs=10, valid_loader=valid_loader)
+    trainer.fit(train_loader, num_epochs, valid_loader=valid_loader)
 
 if __name__ == "__main__":
     main()
