@@ -1,4 +1,4 @@
-"""
+""" filename: models/supersimplenet.py
 - SuperSimpleNet (2024): Unifying Unsupervised and Supervised Learning for Fast and Reliable Surface Defect Detection
   - https://github.com/open-edge-platform/anomalib/tree/main/src/anomalib/models/image/supersimplenet
   - https://anomalib.readthedocs.io/en/latest/markdown/guides/reference/models/image/supersimplenet.html
