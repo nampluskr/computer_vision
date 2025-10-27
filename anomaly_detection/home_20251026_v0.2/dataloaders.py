@@ -84,7 +84,8 @@ def get_dataloader(dataset_name, split, category, transform=None, mask_transform
         shuffle = dataloader_config.get('shuffle', split == 'train')
 
     if num_workers is None:
-        num_workers = dataloader_config.get('num_workers', 4 if split == 'train' else 1)
+        # num_workers = dataloader_config.get('num_workers', 4 if split == 'train' else 1)
+        num_workers = 8
 
     # Create dataloader
     loader_config = {
@@ -92,7 +93,7 @@ def get_dataloader(dataset_name, split, category, transform=None, mask_transform
         'shuffle': shuffle,
         'num_workers': num_workers,
         'pin_memory': True,
-        'persistent_workers': (num_workers > 0)
+        'persistent_workers': False
     }
 
     return DataLoader(dataset, **loader_config)
