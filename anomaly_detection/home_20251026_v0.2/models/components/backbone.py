@@ -38,6 +38,7 @@ BACKBONE_WEIGHT_FILES = {
     
     # https://huggingface.co/timm/wide_resnet50_2.tv_in1k/tree/main
     "wide_resnet50_2.tv_in1k": "wide_resnet50_2.tv_in1k",
+    "resnet50.tv_in1k": "resnet50.tv_in1k",
 
     # https://huggingface.co/zgcr654321/pretrained_models/tree/main/dinov2_pretrain_official_pytorch_weights
     "dinov2_vit_small_14": "dinov2_vits14_pretrain.pth",
@@ -75,7 +76,7 @@ def get_backbone_path(backbone: str):
     elif backbone.startswith("deit"):
         dirname = BACKBONE_WEIGHT_FILES.get(backbone, f"{backbone}.fb_in1k")
         weight_path = os.path.join(BACKBONE_DIR, dirname, "model.safetensors")
-    elif backbone == "wide_resnet50_2.tv_in1k":
+    elif backbone in ("resnet50.tv_in1k", "wide_resnet50_2.tv_in1k"):
         dirname = BACKBONE_WEIGHT_FILES.get(backbone, f"{backbone}.tv_in1k")
         weight_path = os.path.join(BACKBONE_DIR, dirname, "model.safetensors")
     else:
