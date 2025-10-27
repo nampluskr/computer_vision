@@ -641,4 +641,3 @@ class EfficientAdTrainer(BaseTrainer):
         qa = torch.quantile(maps_flat, q=0.9).to(self.device)
         qb = torch.quantile(maps_flat, q=0.995).to(self.device)
         return qa, qb
-      
