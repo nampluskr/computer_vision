@@ -11,13 +11,13 @@ from torch.utils.data._utils.collate import default_collate
 
 
 def get_train_loader(dataset, batch_size, collate_fn=None):
-    return DataLoader(dataset, batch_size, shuffle=True, drop_last=True,
+    return DataLoader(dataset, batch_size, shuffle=True, # drop_last=True,
         num_workers=8, pin_memory=True, persistent_workers=False,
         collate_fn=collate_fn if collate_fn is not None else default_collate)
 
 
 def get_test_loader(dataset, batch_size, collate_fn=None):
-    return DataLoader(dataset, batch_size, shuffle=False, drop_last=False,
+    return DataLoader(dataset, batch_size, shuffle=False, # drop_last=False,
         num_workers=8, pin_memory=True, persistent_workers=False,
         collate_fn=collate_fn if collate_fn is not None else default_collate)
 
@@ -68,15 +68,27 @@ class CIFAR10(Dataset):
 
     def __init__(self, root_dir, split, transform=None):
         self.num_classes = len(self.CLASS_NAMES)
-        self.transform = transform or T.Compose([T.ToPILImage(), T.ToTensor()])
+        # self.transform = transform or T.Compose([T.ToPILImage(), T.ToTensor()])
         self.images = []
         self.labels = []
 
         data_dir = os.path.join(root_dir, "cifar-10-batches-py")
         if split == "train":
             data_batches = [f"data_batch_{i}" for i in range(1, 6)]
+            self.transform = T.Compose([
+                T.ToPILImage(),
+                T.RandomCrop(32, padding=4),
+                T.RandomHorizontalFlip(0.5),
+                T.ToTensor(),
+                T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            ])
         elif split == "test":
             data_batches = ["test_batch"]
+            self.transform = T.Compose([
+                T.ToPILImage(),
+                T.ToTensor(),
+                T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            ])
         else:
             raise ValueError("split must be 'train' or 'test'")
 
@@ -127,8 +139,20 @@ class OxfordPets(Dataset):
 
         if split == "train":
             split_file = os.path.join(root_dir, "annotations", "trainval.txt")
+            self.transform = T.Compose([
+                T.Resize((224, 224)),
+                T.RandomHorizontalFlip(0.3),
+                # T.RandomVerticalFlip(0.3),
+                T.ToTensor(),
+                T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+            ])
         elif split == "test":
             split_file = os.path.join(root_dir, "annotations", "test.txt")
+            self.transform = T.Compose([
+                T.Resize((224, 224)),
+                T.ToTensor(),
+                T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+            ])
         else:
             raise ValueError("split must be 'train' or 'test'")
 
