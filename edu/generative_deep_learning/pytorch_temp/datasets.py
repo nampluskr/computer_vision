@@ -1,5 +1,8 @@
+import platform
 import os
 import numpy as np
+import pandas as pd
+from PIL import Image
 import gzip
 import pickle
 
@@ -10,14 +13,22 @@ from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 
 
+def get_dataloader_config():
+    # print(f">> OS: {platform.system()}")
+    if platform.system() == "Windows":
+        return {"num_workers": 0, "pin_memory": False, "persistent_workers": False}
+    else:  # Linux (NAMU)
+        return {"num_workers": 8, "pin_memory": True, "persistent_workers": False}
+
+
 def get_train_loader(dataset, batch_size, collate_fn=None):
-    return DataLoader(dataset, batch_size, shuffle=True, # drop_last=True,
-        num_workers=8, pin_memory=True, persistent_workers=False)
+    dataloader_config = get_dataloader_config()
+    return DataLoader(dataset, batch_size, shuffle=True, drop_last=True, **dataloader_config)
 
 
 def get_test_loader(dataset, batch_size, collate_fn=None):
-    return DataLoader(dataset, batch_size, shuffle=False, # drop_last=False,
-        num_workers=8, pin_memory=True, persistent_workers=False)
+    dataloader_config = get_dataloader_config()
+    return DataLoader(dataset, batch_size, shuffle=False, drop_last=False, **dataloader_config)
 
 
 class MNIST(Dataset):
@@ -95,6 +106,46 @@ class CIFAR10(Dataset):
 
     def __getitem__(self, idx):
         image = self.transform(self.images[idx])
+        label = torch.tensor(self.labels[idx]).long()
+        class_name = self.CLASS_NAMES[label.item()]
+        return dict(image=image, label=label, class_name=class_name)
+
+
+class CelebA(Dataset):
+    CLASS_NAMES = ["female", "male"]
+
+    def __init__(self, root_dir, split, transform=None):
+        self.root_dir = root_dir
+        self.split = split
+        self.transform = transform or T.Compose([T.ToTensor()])
+
+        image_dir = os.path.join(root_dir, "img_align_celeba", "img_align_celeba")
+        split_map = {"train": 0, "valid": 1, "test": 2}
+
+        split_df = pd.read_csv(os.path.join(root_dir, "list_eval_partition.csv"))
+        attr_df = pd.read_csv(os.path.join(root_dir, "list_attr_celeba.csv"))
+        attr_df = attr_df[["image_id", "Male"]]
+        attr_df['label'] = (attr_df["Male"] == 1).astype(int)
+
+        df = split_df.merge(attr_df[["image_id", 'label']], on="image_id", how='inner')
+
+        if split == "all":
+            selected_df = df
+        elif split in split_map:
+            selected_df = df[df["partition"] == split_map[split]]
+        else:
+            raise ValueError("split must be 'train', 'valid', 'test', or 'all'")
+ 
+        self.image_paths = [os.path.join(image_dir, name) for name in selected_df["image_id"].tolist()]
+        self.labels = selected_df["label"].tolist()
+        self.num_classes = len(self.CLASS_NAMES)
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        image = Image.open(self.image_paths[idx]).convert("RGB")
+        image = self.transform(image)
         label = torch.tensor(self.labels[idx]).long()
         class_name = self.CLASS_NAMES[label.item()]
         return dict(image=image, label=label, class_name=class_name)
