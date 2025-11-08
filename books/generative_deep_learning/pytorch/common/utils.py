@@ -43,3 +43,27 @@ def plot_images(*images, ncols=5, xunit=3, yunit=3, cmap='gray', titles=[], vmin
 
     fig.tight_layout()
     plt.show()
+    
+
+def plot_history(history, metric_names=None):
+    if metric_names is None:
+        metric_names = list(history.keys())
+
+    num_metrics = len(metric_names)
+    fig, axes = plt.subplots(ncols=num_metrics, figsize=(3 * num_metrics, 3))
+    if num_metrics == 1:
+        axes = [axes]
+
+    for ax, metric_name in zip(axes, metric_names):
+        metric_values = history[metric_name]
+        num_epochs = len(metric_values)
+        epochs = range(1, num_epochs + 1)
+
+        ax.plot(epochs, metric_values, 'k')
+        ax.set_title(metric_name)
+        ax.set_xlabel('Epoch')
+        # ax.set_ylabel(metric_name)
+        ax.grid(True)
+    
+    fig.tight_layout()
+    plt.show()
