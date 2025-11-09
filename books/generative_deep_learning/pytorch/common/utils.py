@@ -43,7 +43,7 @@ def plot_images(*images, ncols=5, xunit=3, yunit=3, cmap='gray', titles=[], vmin
 
     fig.tight_layout()
     plt.show()
-    
+
 
 def plot_history(history, metric_names=None):
     if metric_names is None:
@@ -64,6 +64,31 @@ def plot_history(history, metric_names=None):
         ax.set_xlabel('Epoch')
         # ax.set_ylabel(metric_name)
         ax.grid(True)
-    
+
     fig.tight_layout()
     plt.show()
+
+
+@torch.no_grad()
+def create_images(generator, z_sample):
+    device = next(generator.parameters()).device
+    z_tensor = torch.tensor(z_sample).float().to(device)
+    outputs = generator(z_tensor).cpu()
+
+    min_val, max_val = outputs.min().item(), outputs.max().item()
+    if 0.0 <= min_val and max_val <= 1.0:       # sigmoid: [0, 1]
+        images = outputs
+    elif -1.1 <= min_val and max_val <= 1.1:    # tanh: [-1,1]
+        images = (outputs + 1) / 2
+    else:
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+        std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+        images = outputs * std + mean
+
+    images = torch.clamp(images, 0, 1)
+    if images.shape[1] == 1:
+        images = images.squeeze(1).numpy()             # gray: (N, H, W)
+    else:
+        images = images.permute(0, 2, 3, 1).numpy()    # RGB: (N, H, W, 3)
+
+    return images
