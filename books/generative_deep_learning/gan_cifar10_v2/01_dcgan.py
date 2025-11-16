@@ -1,10 +1,3 @@
-""" GAN-A: Vanilla DCGAN (baseline)
-- ConvTranspose 기반 Generator
-- BCE loss
-- BN everywhere
-- CIFAR10 기준 성능: FID 45~60, IS 6.0~6.5
-"""
-
 import os
 import numpy as np
 
@@ -18,75 +11,78 @@ from trainer import fit
 from utils import create_images, plot_images, plot_history
 
 
-class ConvBlockUp(nn.Module):
+class DeconvBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.deconv_block = nn.Sequential(
-            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=4, stride=2, padding=1, bias=False),
+        self.block = nn.Sequential(
+            nn.ConvTranspose2d(in_channels, out_channels, 4, 2, 1, bias=False),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(True))
+            nn.ReLU(True),
+        )
 
     def forward(self, x):
-        return self.deconv_block(x)
-
-
-class ConvBlockDown(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super().__init__()
-        self.conv_block = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.LeakyReLU(0.2, inplace=True))
-
-    def forward(self, x):
-        return self.conv_block(x)
+        return self.block(x)
 
 
 class Generator(nn.Module):
     def __init__(self, latent_dim=100, out_channels=3, base=64):
         super().__init__()
         self.latent_dim = latent_dim
-        self.net = nn.Sequential(
-            nn.ConvTranspose2d(latent_dim, base * 4, kernel_size=4, stride=1, padding=0, bias=False),
-            nn.BatchNorm2d(base * 4),
+        self.initial = nn.Sequential(
+            nn.ConvTranspose2d(latent_dim, base*4, kernel_size=4, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(base*4),
             nn.ReLU(True),
-
-            nn.ConvTranspose2d(base * 4, base * 2, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(base * 2),
-            nn.ReLU(True),
-
-            nn.ConvTranspose2d(base * 2, base, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(base * 1),
-            nn.ReLU(True),
-
-            nn.ConvTranspose2d(base, out_channels, kernel_size=4, stride=2, padding=1, bias=False),
         )
+        self.blocks = nn.Sequential(
+            DeconvBlock(base*4, base*2),  # 4→8
+            DeconvBlock(base*2, base),    # 8→16
+        )
+        self.final = nn.ConvTranspose2d(base, out_channels, kernel_size=4, stride=2, padding=1, bias=False)
+        self.apply(self.init_weights)
+
+    def init_weights(self, m):
+        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
+            nn.init.normal_(m.weight, 0.0, 0.02)
 
     def forward(self, z):
-        x = self.net(z)
+        x = self.initial(z)
+        x = self.blocks(x)
+        x = self.final(x)
         return torch.tanh(x)
+
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+
+    def forward(self, x):
+        return self.block(x)
 
 
 class Discriminator(nn.Module):
     def __init__(self, in_channels=3, base=64):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv2d(in_channels, base, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.LeakyReLU(0.2, inplace=True),
-
-            nn.Conv2d(base, base * 2, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(base * 2),
-            nn.LeakyReLU(0.2, inplace=True),
-
-            nn.Conv2d(base * 2, base * 4, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(base * 4),
-            nn.LeakyReLU(0.2, inplace=True),
-
-            nn.Conv2d(base * 4, 1, kernel_size=4, stride=1, padding=0, bias=False),
+        self.initial = ConvBlock(in_channels, base)         # 32 → 16
+        self.blocks = nn.Sequential(
+            ConvBlock(base, base*2),                        # 16 → 8
+            ConvBlock(base*2, base*4),                      # 8 → 4
         )
+        self.final = nn.Conv2d(base*4, 1, kernel_size=4, stride=1, padding=0, bias=False)
+        self.apply(self.init_weights)
+
+    def init_weights(self, m):
+        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
+            nn.init.normal_(m.weight, 0.0, 0.02)
 
     def forward(self, x):
-        x = self.net(x)
+        x = self.initial(x)
+        x = self.blocks(x)
+        x = self.final(x)
         x = x.view(-1, 1)
         return torch.sigmoid(x)
 
@@ -98,18 +94,11 @@ class GAN(nn.Module):
         self.d_model = discriminator.to(self.device)
         self.g_model = generator.to(self.device)
 
-        self.d_model.apply(self.init_weights)
-        self.g_model.apply(self.init_weights)
-
         self.d_optimizer = torch.optim.Adam(self.d_model.parameters(), lr=2e-4, betas=(0.5, 0.999))
         self.g_optimizer = torch.optim.Adam(self.g_model.parameters(), lr=2e-4, betas=(0.5, 0.999))
 
         self.latent_dim = latent_dim or generator.latent_dim
         self.loss_fn = nn.BCELoss()
-
-    def init_weights(self, m):
-        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
-            nn.init.normal_(m.weight, 0.0, 0.02)
 
     def train_step(self, batch):
         batch_size = batch["image"].shape[0]
@@ -140,7 +129,7 @@ class GAN(nn.Module):
         self.g_optimizer.step()
 
         return dict(real_loss=d_real_loss, fake_loss=d_fake_loss, gen_loss=g_loss)
-
+    
 
 if __name__ == "__main__":
 
@@ -161,7 +150,7 @@ if __name__ == "__main__":
     total_history = {}
     epoch, num_epochs = 0, 5
 
-    for _ in range(10):
+    for _ in range(4):
         history = fit(gan, train_loader, num_epochs=num_epochs)
         epoch += num_epochs
         for split_name, metrics in history.items():
