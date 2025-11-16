@@ -1,8 +1,9 @@
-""" GAN-A: Vanilla DCGAN (baseline)
-- ConvTranspose 기반 Generator
-- BCE loss
-- BN everywhere
-- CIFAR10 기준 성능: FID 45~60, IS 6.0~6.5
+""" GAN-D: HingeGAN (Loss 개선)
+BCE Loss → Hinge Loss
+D: ReLU(1 - D(x)), ReLU(1 + D(G(z)))
+매우 안정적
+FID/IS 개선 폭 큼
+SAGAN, BigGAN에서도 사용
 """
 
 import os
@@ -91,7 +92,7 @@ class Discriminator(nn.Module):
         return torch.sigmoid(x)
 
 
-class GAN(nn.Module):
+class HingeGAN(nn.Module):
     def __init__(self, discriminator, generator, latent_dim=None, device=None):
         super().__init__()
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -113,20 +114,22 @@ class GAN(nn.Module):
 
     def train_step(self, batch):
         batch_size = batch["image"].shape[0]
-        real_labels = torch.ones((batch_size, 1)).to(self.device)
-        fake_labels = torch.zeros((batch_size, 1)).to(self.device)
+        # real_labels = torch.ones((batch_size, 1)).to(self.device)
+        # fake_labels = torch.zeros((batch_size, 1)).to(self.device)
 
         # Train discriminator
         self.d_optimizer.zero_grad()
         real_images = batch["image"].to(self.device)
         real_preds = self.d_model(real_images)
-        d_real_loss = self.loss_fn(real_preds, real_labels)
+        # d_real_loss = self.loss_fn(real_preds, real_labels)
+        d_real_loss = torch.relu(1.0 - real_preds).mean()
         d_real_loss.backward()
 
         z = torch.randn(batch_size, self.latent_dim, 1, 1).to(self.device)
         fake_images = self.g_model(z).detach()
         fake_preds = self.d_model(fake_images)
-        d_fake_loss = self.loss_fn(fake_preds, fake_labels)
+        # d_fake_loss = self.loss_fn(fake_preds, fake_labels)
+        d_fake_loss = torch.relu(1.0 + fake_preds).mean()
         d_fake_loss.backward()
         self.d_optimizer.step()
 
@@ -135,7 +138,8 @@ class GAN(nn.Module):
         z = torch.randn(batch_size, self.latent_dim, 1, 1).to(self.device)
         fake_images = self.g_model(z)
         fake_preds = self.d_model(fake_images)
-        g_loss = self.loss_fn(fake_preds, real_labels)
+        # g_loss = self.loss_fn(fake_preds, real_labels)
+        g_loss = -fake_preds.mean()
         g_loss.backward()
         self.g_optimizer.step()
 
@@ -154,7 +158,7 @@ if __name__ == "__main__":
 
     discriminator = Discriminator(in_channels=3, base=64)
     generator = Generator(latent_dim=100, out_channels=3, base=64)
-    gan = GAN(discriminator, generator)
+    gan = HingeGAN(discriminator, generator)
     z_sample = np.random.normal(size=(50, 100, 1, 1))
 
     filename = os.path.splitext(os.path.basename(__file__))[0]

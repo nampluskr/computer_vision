@@ -1,8 +1,10 @@
-""" GAN-A: Vanilla DCGAN (baseline)
+""" GAN-C: DCGAN++
 - ConvTranspose 기반 Generator
 - BCE loss
-- BN everywhere
-- CIFAR10 기준 성능: FID 45~60, IS 6.0~6.5
+- BN everywhere => BatchNorm 제거 + SpectralNorm 추가
+- 필터 증가(gf=64→96 or 128)
+- Orthogonal initialization
+- Weight scale 개선
 """
 
 import os
@@ -66,23 +68,23 @@ class Generator(nn.Module):
         x = self.net(z)
         return torch.tanh(x)
 
-
+# BatchNorm 제거 + SpectralNorm 추가
 class Discriminator(nn.Module):
     def __init__(self, in_channels=3, base=64):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv2d(in_channels, base, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.utils.spectral_norm(nn.Conv2d(in_channels, base, kernel_size=4, stride=2, padding=1, bias=False)),
             nn.LeakyReLU(0.2, inplace=True),
 
-            nn.Conv2d(base, base * 2, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(base * 2),
+            nn.utils.spectral_norm(nn.Conv2d(base, base * 2, kernel_size=4, stride=2, padding=1, bias=False)),
+            # nn.BatchNorm2d(base * 2),
             nn.LeakyReLU(0.2, inplace=True),
 
-            nn.Conv2d(base * 2, base * 4, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(base * 4),
+            nn.utils.spectral_norm(nn.Conv2d(base * 2, base * 4, kernel_size=4, stride=2, padding=1, bias=False)),
+            # nn.BatchNorm2d(base * 4),
             nn.LeakyReLU(0.2, inplace=True),
 
-            nn.Conv2d(base * 4, 1, kernel_size=4, stride=1, padding=0, bias=False),
+            nn.utils.spectral_norm(nn.Conv2d(base * 4, 1, kernel_size=4, stride=1, padding=0, bias=False)),
         )
 
     def forward(self, x):
@@ -107,9 +109,17 @@ class GAN(nn.Module):
         self.latent_dim = latent_dim or generator.latent_dim
         self.loss_fn = nn.BCELoss()
 
+    ## Orthogonal initialization / Weight scale 개선
     def init_weights(self, m):
-        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
-            nn.init.normal_(m.weight, 0.0, 0.02)
+        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+            nn.init.orthogonal_(m.weight)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+            m.weight.data *= 0.02
+
+        elif isinstance(m, nn.BatchNorm2d):
+            nn.init.ones_(m.weight)
+            nn.init.zeros_(m.bias)
 
     def train_step(self, batch):
         batch_size = batch["image"].shape[0]
@@ -152,8 +162,8 @@ if __name__ == "__main__":
     root_dir = "/mnt/d/datasets/cifar10"
     train_loader = get_train_loader(dataset=CIFAR10(root_dir, "train", transform=transform), batch_size=128)
 
-    discriminator = Discriminator(in_channels=3, base=64)
-    generator = Generator(latent_dim=100, out_channels=3, base=64)
+    discriminator = Discriminator(in_channels=3, base=128)
+    generator = Generator(latent_dim=100, out_channels=3, base=128)
     gan = GAN(discriminator, generator)
     z_sample = np.random.normal(size=(50, 100, 1, 1))
 

@@ -42,7 +42,7 @@ class ConvBlock(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, latent_dim=100, out_channels=3, base=64):
+    def __init__(self, latent_dim=100, out_channels=3, base=96):
         super().__init__()
         self.latent_dim = latent_dim
         self.net = nn.Sequential(
@@ -67,7 +67,7 @@ class Generator(nn.Module):
 
 # BatchNorm 제거 + SpectralNorm 추가
 class Discriminator(nn.Module):
-    def __init__(self, in_channels=3, base=64):
+    def __init__(self, in_channels=3, base=96):
         super().__init__()
         self.net = nn.Sequential(
             nn.utils.spectral_norm(nn.Conv2d(in_channels, base, kernel_size=4, stride=2, padding=1, bias=False)),
@@ -151,8 +151,8 @@ if __name__ == "__main__":
     root_dir = "/mnt/d/datasets/cifar10"
     train_loader = get_train_loader(dataset=CIFAR10(root_dir, "train", transform=transform), batch_size=128)
 
-    discriminator = Discriminator(in_channels=3)
-    generator = Generator(latent_dim=100, out_channels=3)
+    discriminator = Discriminator(in_channels=3, base=64)
+    generator = Generator(latent_dim=100, out_channels=3, base=64)
     gan = GAN(discriminator, generator)
     z_sample = np.random.normal(size=(50, 100, 1, 1))
 

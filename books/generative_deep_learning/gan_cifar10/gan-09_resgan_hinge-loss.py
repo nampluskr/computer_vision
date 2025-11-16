@@ -1,8 +1,7 @@
-""" GAN-A: Vanilla DCGAN (baseline)
-- ConvTranspose 기반 Generator
-- BCE loss
-- BN everywhere
-- CIFAR10 기준 성능: FID 45~60, IS 6.0~6.5
+""" GAN-I: ResDCGAN (Residual Block)
+ResBlock Upsample
+ResBlock Downsample
+CIFAR10에서도 안정성과 품질 상승
 """
 
 import os
@@ -18,80 +17,101 @@ from trainer import fit
 from utils import create_images, plot_images, plot_history
 
 
-class DeconvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
+class ResBlockUp(nn.Module):
+    def __init__(self, in_ch, out_ch):
         super().__init__()
-        self.deconv_block = nn.Sequential(
-            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(True))
+        self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
+
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 3, 1, 1),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(out_ch, out_ch, 3, 1, 1),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+        self.skip = nn.Conv2d(in_ch, out_ch, 1, 1, 0)
 
     def forward(self, x):
-        return self.deconv_block(x)
+        skip = self.skip(self.upsample(x))
+        out = self.upsample(x)
+        out = self.conv1(out)
+        out = self.conv2(out)
+        return out + skip
 
 
-class ConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
+class ResBlockDown(nn.Module):
+    def __init__(self, in_ch, out_ch):
         super().__init__()
-        self.conv_block = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.LeakyReLU(0.2, inplace=True))
+        self.skip = nn.Conv2d(in_ch, out_ch, 1, 2, 0)
+
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 3, 1, 1),
+            nn.LeakyReLU(0.2, inplace=True)
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(out_ch, out_ch, 3, 1, 1),
+            nn.LeakyReLU(0.2, inplace=True)
+        )
+        self.down = nn.AvgPool2d(2)
 
     def forward(self, x):
-        return self.conv_block(x)
+        skip = self.skip(x)
+        out = self.conv1(x)
+        out = self.conv2(out)
+        out = self.down(out)
+        return out + skip
 
 
-class Generator(nn.Module):
-    def __init__(self, latent_dim=100, out_channels=3, base=64):
+class ResGenerator(nn.Module):
+    def __init__(self, latent_dim=128, out_channels=3, base=64):
         super().__init__()
         self.latent_dim = latent_dim
-        self.net = nn.Sequential(
-            nn.ConvTranspose2d(latent_dim, base * 4, kernel_size=4, stride=1, padding=0, bias=False),
-            nn.BatchNorm2d(base * 4),
-            nn.ReLU(True),
 
-            nn.ConvTranspose2d(base * 4, base * 2, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(base * 2),
-            nn.ReLU(True),
+        # z: (B, latent_dim, 1, 1) → (B, base*4, 4, 4)
+        self.fc = nn.ConvTranspose2d(latent_dim, base * 4, 4, 1, 0)
 
-            nn.ConvTranspose2d(base * 2, base, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(base * 1),
-            nn.ReLU(True),
+        # ResBlockUpsample: 4→8, 8→16, 16→32
+        self.res1 = ResBlockUp(base * 4, base * 2)   # 4→8
+        self.res2 = ResBlockUp(base * 2, base)       # 8→16
+        self.res3 = ResBlockUp(base, base // 2)      # 16→32
 
-            nn.ConvTranspose2d(base, out_channels, kernel_size=4, stride=2, padding=1, bias=False),
-        )
+        self.out_conv = nn.Conv2d(base // 2, out_channels, 3, 1, 1)
 
     def forward(self, z):
-        x = self.net(z)
+        x = self.fc(z)
+        x = self.res1(x)
+        x = self.res2(x)
+        x = self.res3(x)
+        x = self.out_conv(nn.LeakyReLU(0.2)(x))
         return torch.tanh(x)
 
 
-class Discriminator(nn.Module):
+class ResDiscriminator(nn.Module):
     def __init__(self, in_channels=3, base=64):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv2d(in_channels, base, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.LeakyReLU(0.2, inplace=True),
 
-            nn.Conv2d(base, base * 2, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(base * 2),
-            nn.LeakyReLU(0.2, inplace=True),
+        # 32→16, 16→8, 8→4
+        self.res1 = ResBlockDown(in_channels, base // 2)
+        self.res2 = ResBlockDown(base // 2, base)
+        self.res3 = ResBlockDown(base, base * 2)
 
-            nn.Conv2d(base * 2, base * 4, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(base * 4),
-            nn.LeakyReLU(0.2, inplace=True),
-
-            nn.Conv2d(base * 4, 1, kernel_size=4, stride=1, padding=0, bias=False),
-        )
+        # global sum pooling 후 linear
+        self.linear = nn.Linear(base * 2, 1)
 
     def forward(self, x):
-        x = self.net(x)
-        x = x.view(-1, 1)
-        return torch.sigmoid(x)
+        x = self.res1(x)
+        x = self.res2(x)
+        x = self.res3(x)
+
+        # Global Sum Pool
+        x = nn.functional.leaky_relu(x, 0.2)
+        x = x.sum(dim=[2, 3])  # (B, C)
+
+        return self.linear(x)
 
 
-class GAN(nn.Module):
+class HingeGAN(nn.Module):
     def __init__(self, discriminator, generator, latent_dim=None, device=None):
         super().__init__()
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -105,7 +125,7 @@ class GAN(nn.Module):
         self.g_optimizer = torch.optim.Adam(self.g_model.parameters(), lr=2e-4, betas=(0.5, 0.999))
 
         self.latent_dim = latent_dim or generator.latent_dim
-        self.loss_fn = nn.BCELoss()
+        # self.loss_fn = nn.BCELoss()
 
     def init_weights(self, m):
         if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
@@ -113,20 +133,22 @@ class GAN(nn.Module):
 
     def train_step(self, batch):
         batch_size = batch["image"].shape[0]
-        real_labels = torch.ones((batch_size, 1)).to(self.device)
-        fake_labels = torch.zeros((batch_size, 1)).to(self.device)
+        # real_labels = torch.ones((batch_size, 1)).to(self.device)
+        # fake_labels = torch.zeros((batch_size, 1)).to(self.device)
 
         # Train discriminator
         self.d_optimizer.zero_grad()
         real_images = batch["image"].to(self.device)
         real_preds = self.d_model(real_images)
-        d_real_loss = self.loss_fn(real_preds, real_labels)
+        # d_real_loss = self.loss_fn(real_preds, real_labels)
+        d_real_loss = torch.relu(1.0 - real_preds).mean()
         d_real_loss.backward()
 
         z = torch.randn(batch_size, self.latent_dim, 1, 1).to(self.device)
         fake_images = self.g_model(z).detach()
         fake_preds = self.d_model(fake_images)
-        d_fake_loss = self.loss_fn(fake_preds, fake_labels)
+        # d_fake_loss = self.loss_fn(fake_preds, fake_labels)
+        d_fake_loss = torch.relu(1.0 + fake_preds).mean()
         d_fake_loss.backward()
         self.d_optimizer.step()
 
@@ -135,7 +157,8 @@ class GAN(nn.Module):
         z = torch.randn(batch_size, self.latent_dim, 1, 1).to(self.device)
         fake_images = self.g_model(z)
         fake_preds = self.d_model(fake_images)
-        g_loss = self.loss_fn(fake_preds, real_labels)
+        # g_loss = self.loss_fn(fake_preds, real_labels)
+        g_loss = -fake_preds.mean()
         g_loss.backward()
         self.g_optimizer.step()
 
@@ -152,9 +175,9 @@ if __name__ == "__main__":
     root_dir = "/mnt/d/datasets/cifar10"
     train_loader = get_train_loader(dataset=CIFAR10(root_dir, "train", transform=transform), batch_size=128)
 
-    discriminator = Discriminator(in_channels=3, base=64)
-    generator = Generator(latent_dim=100, out_channels=3, base=64)
-    gan = GAN(discriminator, generator)
+    discriminator = ResDiscriminator(in_channels=3, base=64)
+    generator = ResGenerator(latent_dim=100, out_channels=3, base=64)
+    gan = HingeGAN(discriminator, generator)
     z_sample = np.random.normal(size=(50, 100, 1, 1))
 
     filename = os.path.splitext(os.path.basename(__file__))[0]
