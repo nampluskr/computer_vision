@@ -65,7 +65,7 @@ class WGAN_GP(nn.Module):
     def train_step(self, batch):
         batch_size = batch["image"].size(0)
 
-        # (1) Update Critic
+        # (1) Update Discriminator (Critic)
         for _ in range(self.d_steps):
             real_images = batch["image"].to(self.device)
             real_logits = self.d_model(real_images)
@@ -74,8 +74,8 @@ class WGAN_GP(nn.Module):
             fake_logits = self.d_model(fake_images)
 
             d_loss = self.d_loss_fn(real_logits, fake_logits)
-            gp = self.gradient_penalty(real_images, fake_images)
-            d_loss_gp = d_loss + self.gp_lambda * gp
+            gp = self.gradient_penalty(real_images, fake_images) * self.gp_lambda
+            d_loss_gp = d_loss + gp
 
             self.c_optimizer.zero_grad()
             d_loss_gp.backward()
