@@ -24,10 +24,11 @@ class GAN(nn.Module):
         self.g_optimizer = optim.Adam(self.g_model.parameters(), lr=2e-4, betas=(0.5, 0.999))
 
         self.latent_dim = latent_dim or generator.latent_dim
+        self.label_smooth = 0.1
 
     def d_loss_fn(self, real_logits, fake_logits):
-        real_labels = torch.ones_like(real_logits)
-        fake_labels = torch.zeros_like(fake_logits)
+        real_labels = torch.ones_like(real_logits) * (1 - self.label_smooth)
+        fake_labels = torch.ones_like(fake_logits) * self.label_smooth
         d_real_loss = F.binary_cross_entropy_with_logits(real_logits, real_labels)
         d_fake_loss = F.binary_cross_entropy_with_logits(fake_logits, fake_labels)
         d_loss = d_real_loss + d_fake_loss
