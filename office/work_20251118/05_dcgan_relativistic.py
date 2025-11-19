@@ -13,61 +13,72 @@ from utils import create_images, plot_images, plot_history, set_seed
 from dcgan import Discriminator32, Generator32
 
 
-class RGAN_P(nn.Module):
+class RaGAN(nn.Module):
     def __init__(self, discriminator, generator, latent_dim=None, device=None):
         super().__init__()
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.D = discriminator.to(self.device)
-        self.G = generator.to(self.device)
-        self.d_opt = optim.Adam(self.D.parameters(), lr=2e-4, betas=(0.5, 0.999))
-        self.g_opt = optim.Adam(self.G.parameters(), lr=2e-4, betas=(0.5, 0.999))
-        self.latent_dim = latent_dim or getattr(self.G, "latent_dim", 100)
+        self.d_model = discriminator.to(self.device)
+        self.g_model = generator.to(self.device)
 
-    @staticmethod
-    def _relativistic_pair_loss(real_logits, fake_logits, for_generator):
-        if not for_generator:
-            loss_real = -F.logsigmoid(real_logits - fake_logits).mean()
-            loss_fake = -F.logsigmoid(fake_logits - real_logits).mean()
-            loss = loss_real + loss_fake
-        else:
-            loss_real = -F.logsigmoid(fake_logits - real_logits).mean()
-            loss_fake = -F.logsigmoid(real_logits - fake_logits).mean()
-            loss = loss_real + loss_fake
-        return loss
+        self.d_optimizer = optim.Adam(self.d_model.parameters(), lr=2e-4, betas=(0.5, 0.999))
+        self.g_optimizer = optim.Adam(self.g_model.parameters(), lr=2e-4, betas=(0.5, 0.999))
+
+        self.latent_dim = latent_dim or generator.latent_dim
 
     def d_loss_fn(self, real_logits, fake_logits):
-        return self._relativistic_pair_loss(real_logits, fake_logits, False)
+        real_labels = torch.ones_like(real_logits)
+        fake_labels = torch.zeros_like(fake_logits)
+        d_real_loss = F.binary_cross_entropy_with_logits(real_logits - fake_logits.mean(dim=0, keepdim=True), real_labels)
+        d_fake_loss = F.binary_cross_entropy_with_logits(fake_logits - real_logits.mean(dim=0, keepdim=True), fake_labels)
+        d_loss = d_real_loss + d_fake_loss
+        return d_loss, d_real_loss, d_fake_loss
 
     def g_loss_fn(self, real_logits, fake_logits):
-        return self._relativistic_pair_loss(real_logits, fake_logits, True)
+        real_labels = torch.ones_like(fake_logits)
+        fake_labels = torch.zeros_like(real_logits)
+        g_fake_loss = F.binary_cross_entropy_with_logits(fake_logits - real_logits.mean(dim=0, keepdim=True), real_labels)
+        g_real_loss = F.binary_cross_entropy_with_logits(real_logits - fake_logits.mean(dim=0, keepdim=True), fake_labels)
+        g_loss = g_fake_loss + g_real_loss
+        return g_loss, g_real_loss, g_fake_loss
 
     def train_step(self, batch):
-        B = batch["image"].size(0)
-        real_imgs = batch["image"].to(self.device)
+        batch_size = batch["image"].size(0)
 
-        real_logits = self.D(real_imgs)
-        noises = torch.randn(B, self.latent_dim, 1, 1, device=self.device)
-        fake_imgs = self.G(noises).detach()
-        fake_logits = self.D(fake_imgs)
+        # (1) Update Discriminator
+        real_images = batch["image"].to(self.device)
+        real_logits = self.d_model(real_images)
 
-        d_loss, _, _ = self.d_loss_fn(real_logits, fake_logits)
-        self.d_opt.zero_grad()
+        noises = torch.randn(batch_size, self.latent_dim, 1, 1).to(self.device)
+        fake_images = self.g_model(noises).detach()
+        fake_logits = self.d_model(fake_images)
+
+        d_loss, d_real_loss, d_fake_loss = self.d_loss_fn(real_logits, fake_logits)
+
+        self.d_optimizer.zero_grad()
         d_loss.backward()
-        self.d_opt.step()
+        self.d_optimizer.step()
 
-        noises = torch.randn(B, self.latent_dim, 1, 1, device=self.device)
-        fake_imgs = self.G(noises)
-        fake_logits = self.D(fake_imgs)
-        real_logits = self.D(real_imgs)
+        # (2) Update Generator
+        noises = torch.randn(batch_size, self.latent_dim, 1, 1).to(self.device)
+        fake_images = self.g_model(noises)
+        fake_logits = self.d_model(fake_images)
 
-        g_loss = self.g_loss_fn(real_logits, fake_logits)
-        self.g_opt.zero_grad()
+        real_images = batch["image"].to(self.device)
+        real_logits = self.d_model(real_images).detach()
+
+        g_loss, g_fake_loss, g_real_loss = self.g_loss_fn(real_logits, fake_logits)
+
+        self.g_optimizer.zero_grad()
         g_loss.backward()
-        self.g_opt.step()
+        self.g_optimizer.step()
 
         return dict(
             d_loss=d_loss.detach().cpu().item(),
+            # d_real_loss=d_real_loss.detach().cpu().item(),
+            # d_fake_loss=d_fake_loss.detach().cpu().item(),
             g_loss=g_loss.detach().cpu().item(),
+            # g_real_loss=g_real_loss.detach().cpu().item(),
+            # g_fake_loss=g_fake_loss.detach().cpu().item(),
         )
 
 
@@ -85,8 +96,8 @@ if __name__ == "__main__":
 
     discriminator = Discriminator32(in_channels=3, base=64)
     generator = Generator32(latent_dim=100, out_channels=3, base=64)
-    gan = RGAN_P(discriminator, generator)
-    z_sample = np.random.normal(size=(50, 100, 1, 1))
+    gan = RaGAN(discriminator, generator)
+    noises = np.random.normal(size=(50, 100, 1, 1))
 
     filename = os.path.splitext(os.path.basename(__file__))[0]
     total_history = {}
@@ -101,6 +112,6 @@ if __name__ == "__main__":
                 total_history[split_name].setdefault(metric_name, [])
                 total_history[split_name][metric_name].extend(metric_values)
 
-        images = create_images(generator, z_sample)
+        images = create_images(generator, noises)
         image_path = f"./outputs/{filename}-epoch{epoch}.png"
         plot_images(*images, ncols=10, xunit=1, yunit=1, save_path=image_path)
