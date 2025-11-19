@@ -477,6 +477,5 @@ if __name__ == "__main__":
 
         images = create_infogan_images(generator, fixed_z, c_continuous, fixed_discrete)
         image_path = f"./outputs/{filename}-epoch{epoch}.png"
-        plot_images(images, ncols=n_variations, xunit=1, yunit=1, save_path=image_path)
-
-  
+        plot_images(*images, ncols=n_variations, xunit=1, yunit=1, save_path=image_path)
+        
