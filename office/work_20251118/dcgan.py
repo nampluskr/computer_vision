@@ -77,8 +77,8 @@ class Generator64(nn.Module):
             nn.Tanh()
         )
         self.apply(self.init_weights)
-        if use_spectral_norm:
-            self.apply(apply_spectral_norm)
+        # if use_spectral_norm:
+        #     self.apply(apply_spectral_norm)
 
     def init_weights(self, m):
         if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):

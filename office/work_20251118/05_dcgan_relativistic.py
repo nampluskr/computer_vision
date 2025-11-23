@@ -91,19 +91,19 @@ if __name__ == "__main__":
         T.ToTensor(),
         T.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
     ])
-    root_dir = "/home/namu/myspace/NAMU/datasets/cifar10"
+    root_dir = "/mnt/d/datasets/cifar10"
     train_loader = get_train_loader(dataset=CIFAR10(root_dir, "train", transform=transform), batch_size=128)
 
     discriminator = Discriminator32(in_channels=3, base=64)
     generator = Generator32(latent_dim=100, out_channels=3, base=64)
     gan = RaGAN(discriminator, generator)
-    noises = np.random.normal(size=(50, 100, 1, 1))
+    noises = np.random.normal(size=(100, 100, 1, 1))
 
     filename = os.path.splitext(os.path.basename(__file__))[0]
     total_history = {}
     epoch, num_epochs = 0, 5
 
-    for _ in range(4):
+    for _ in range(2):
         history = fit(gan, train_loader, num_epochs=num_epochs)
         epoch += num_epochs
         for split_name, metrics in history.items():

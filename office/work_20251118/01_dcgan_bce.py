@@ -24,11 +24,10 @@ class GAN(nn.Module):
         self.g_optimizer = optim.Adam(self.g_model.parameters(), lr=2e-4, betas=(0.5, 0.999))
 
         self.latent_dim = latent_dim or generator.latent_dim
-        self.label_smooth = 0.1
 
     def d_loss_fn(self, real_logits, fake_logits):
-        real_labels = torch.ones_like(real_logits) * (1 - self.label_smooth)
-        fake_labels = torch.ones_like(fake_logits) * self.label_smooth
+        real_labels = torch.ones_like(real_logits)
+        fake_labels = torch.zeros_like(fake_logits)
         d_real_loss = F.binary_cross_entropy_with_logits(real_logits, real_labels)
         d_fake_loss = F.binary_cross_entropy_with_logits(fake_logits, fake_labels)
         d_loss = d_real_loss + d_fake_loss
@@ -80,19 +79,19 @@ if __name__ == "__main__":
         T.ToTensor(),
         T.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
     ])
-    root_dir = "/home/namu/myspace/NAMU/datasets/cifar10"
+    root_dir = "/mnt/d/datasets/cifar10"
     train_loader = get_train_loader(dataset=CIFAR10(root_dir, "train", transform=transform), batch_size=128)
 
     discriminator = Discriminator32(in_channels=3, base=64)
     generator = Generator32(latent_dim=100, out_channels=3, base=64)
     gan = GAN(discriminator, generator)
-    z_sample = np.random.normal(size=(50, 100, 1, 1))
+    z_sample = np.random.normal(size=(100, 100, 1, 1))
 
     filename = os.path.splitext(os.path.basename(__file__))[0]
     total_history = {}
     epoch, num_epochs = 0, 5
 
-    for _ in range(4):
+    for _ in range(2):
         history = fit(gan, train_loader, num_epochs=num_epochs)
         epoch += num_epochs
         for split_name, metrics in history.items():

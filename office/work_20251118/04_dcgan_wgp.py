@@ -26,15 +26,6 @@ class WGAN_GP(nn.Module):
         self.gp_lambda = 10.0
         self.d_steps = 5
 
-    def init_weights(self, m):
-        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-            nn.init.normal_(m.weight, 0.0, 0.02)
-            if m.bias is not None:
-                nn.init.zeros_(m.bias)
-        elif isinstance(m, nn.BatchNorm2d):
-            nn.init.ones_(m.weight)
-            nn.init.zeros_(m.bias)
-
     def gradient_penalty(self, real_images, fake_images):
         batch_size = real_images.size(0)
 
@@ -57,28 +48,32 @@ class WGAN_GP(nn.Module):
         return gp
 
     def d_loss_fn(self, real_logits, fake_logits):
-        return -(real_logits.mean() - fake_logits.mean())
+        d_real_loss = -real_logits.mean()
+        d_fake_loss = fake_logits.mean()
+        d_loss = d_real_loss + d_fake_loss
+        return d_loss, d_real_loss, d_fake_loss
 
     def g_loss_fn(self, fake_logits):
-        return -torch.mean(fake_logits)
+        return -fake_logits.mean()
 
     def train_step(self, batch):
         batch_size = batch["image"].size(0)
 
         # (1) Update Discriminator (Critic)
+        real_images = batch["image"].to(self.device)
         for _ in range(self.d_steps):
-            real_images = batch["image"].to(self.device)
             real_logits = self.d_model(real_images)
             noises = torch.randn(batch_size, self.latent_dim, 1, 1).to(self.device)
             fake_images = self.g_model(noises).detach()
             fake_logits = self.d_model(fake_images)
 
-            d_loss = self.d_loss_fn(real_logits, fake_logits)
-            gp = self.gradient_penalty(real_images, fake_images) * self.gp_lambda
-            d_loss_gp = d_loss + gp
+            d_loss, d_real_loss, d_fake_loss = self.d_loss_fn(real_logits, fake_logits)
+            gp = self.gradient_penalty(real_images, fake_images)
+            d_loss_gp = d_loss + gp * self.gp_lambda
 
             self.c_optimizer.zero_grad()
             d_loss_gp.backward()
+            torch.nn.utils.clip_grad_norm_(self.d_model.parameters(), max_norm=1.0)
             self.c_optimizer.step()
 
         # (2) Update Generator
@@ -93,8 +88,10 @@ class WGAN_GP(nn.Module):
 
         return dict(
             d_loss=d_loss.detach().cpu().item(),
+            real_loss=d_real_loss.detach().cpu().item(),
+            fake_loss=d_fake_loss.detach().cpu().item(),
+            g_loss=g_loss.detach().cpu().item(),
             gp=gp.detach().cpu().item(),
-            g_loss=g_loss.detach().cpu().item()
         )
 
 
@@ -107,19 +104,19 @@ if __name__ == "__main__":
         T.ToTensor(),
         T.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
     ])
-    root_dir = "/home/namu/myspace/NAMU/datasets/cifar10"
+    root_dir = "/mnt/d/datasets/cifar10"
     train_loader = get_train_loader(dataset=CIFAR10(root_dir, "train", transform=transform), batch_size=128)
 
     discriminator = Discriminator32(in_channels=3, base=64)
     generator = Generator32(latent_dim=100, out_channels=3, base=64)
     gan = WGAN_GP(discriminator, generator)
-    z_sample = np.random.normal(size=(50, 100, 1, 1))
+    z_sample = np.random.normal(size=(100, 100, 1, 1))
 
     filename = os.path.splitext(os.path.basename(__file__))[0]
     total_history = {}
     epoch, num_epochs = 0, 5
 
-    for _ in range(4):
+    for _ in range(2):
         history = fit(gan, train_loader, num_epochs=num_epochs)
         epoch += num_epochs
         for split_name, metrics in history.items():
