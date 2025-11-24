@@ -1,0 +1,168 @@
+```python
+import numpy as np
+
+import torch
+from torchvision import transforms as T
+
+from datasets import CIFAR10, FashionMNIST, MNIST
+from datasets import get_train_loader, get_test_loader
+from trainer import train_gan, fit
+from utils import set_seed
+from gan import GAN, CGAN, ACGAN
+from generators import Generator32, CGenerator32
+from discriminators import Discriminator32, CDiscriminator32, ACDiscriminator32
+
+SEED = 42
+BATCH_SIZE = 128
+NUM_SAMPLES = 100
+
+LATENT_DIM = 100
+IN_CHANNELS = 3
+OUT_CHANNELS = 3
+BASE = 64
+
+NUM_EPOCHS = 5
+TOTAL_EPOCHS = 20
+```
+
+```python
+import torch.nn as nn
+from discriminators import ConvBlock
+
+class Encoder32(nn.Module):
+    def __init__(self, in_channels=3, latent_dim=10, base=64):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.initial = nn.Sequential(
+            nn.Conv2d(in_channels, base, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+        self.blocks = nn.Sequential(
+            ConvBlock(base, base*2),
+            ConvBlock(base*2, base*4),
+        )
+        self.final = nn.Conv2d(base*4, latent_dim, kernel_size=4, stride=1, padding=0, bias=False)
+
+        self.apply(self.init_weights)
+
+    def init_weights(self, m):
+        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+            nn.init.normal_(m.weight, 0.0, 0.02)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.BatchNorm2d):
+            nn.init.ones_(m.weight)
+            nn.init.zeros_(m.bias)
+
+    def forward(self, images):
+        x = self.initial(images)
+        x = self.blocks(x)
+        logits = self.final(x).view(-1, self.latent_dim)
+        return logits
+
+import torch
+import torch.optim as optim
+from torchmetrics import Accuracy
+from torchmetrics.classification import BinaryAccuracy
+
+class MulticlassClassifier(nn.Module):
+    def __init__(self, encoder, device=None):
+        super().__init__()
+        self.num_classes = encoder.latent_dim
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.encoder = encoder.to(self.device)
+
+        self.optimizer = optim.Adam(self.encoder.parameters(), lr=1e-3)
+        self.loss_fn = nn.CrossEntropyLoss()
+        self.acc_metric = Accuracy(task="multiclass", num_classes=self.num_classes).to(self.device)
+
+    def train_step(self, batch):
+        images = batch["image"].to(self.device)
+        labels = batch["label"].to(self.device)
+        logits = self.encoder(images)
+        loss = self.loss_fn(logits, labels)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        with torch.no_grad():
+            acc = self.acc_metric(logits, labels)
+        return dict(loss=loss.item(), acc=acc.item())
+
+    @torch.no_grad()
+    def eval_step(self, batch):
+        images = batch["image"].to(self.device)
+        labels = batch["label"].to(self.device)
+        logits = self.encoder(images)
+        loss = self.loss_fn(logits, labels)
+        acc = self.acc_metric(logits, labels)
+        return dict(loss=loss.item(), acc=acc.item())
+
+
+class BinaryClassifier(nn.Module):
+    def __init__(self, encoder, device=None):
+        super().__init__()
+        self.num_classes = encoder.latent_dim
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.encoder = encoder.to(self.device)
+
+        self.optimizer = optim.Adam(self.encoder.parameters(), lr=1e-3)
+        self.loss_fn = nn.BCEWithLogitsLoss()
+        self.acc_metric = BinaryAccuracy().to(self.device)
+
+    def train_step(self, batch):
+        images = batch["image"].to(self.device)
+        labels = batch["label"].to(self.device)
+        logits = self.encoder(images)
+        loss = self.loss_fn(logits, labels)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        with torch.no_grad():
+            acc = self.acc_metric(logits, labels)
+        return dict(loss=loss.item(), acc=acc.item())
+
+    @torch.no_grad()
+    def eval_step(self, batch):
+        images = batch["image"].to(self.device)
+        labels = batch["label"].to(self.device)
+        logits = self.encoder(images)
+        loss = self.loss_fn(logits, labels)
+        acc = self.acc_metric(logits, labels)
+        return dict(loss=loss.item(), acc=acc.item())
+```
+
+```python
+set_seed(SEED)
+train_loader = get_train_loader(
+    dataset=CIFAR10(root_dir="/home/namu/myspace/NAMU/datasets/cifar10", 
+        split="train", transform=T.Compose([T.ToTensor()])), 
+    batch_size=64)
+test_loader = get_test_loader(
+    dataset=CIFAR10(root_dir="/home/namu/myspace/NAMU/datasets/cifar10", 
+        split="test", transform=T.Compose([T.ToTensor()])), 
+    batch_size=32)
+
+encoder = Encoder32(in_channels=IN_CHANNELS, latent_dim=10, base=BASE)
+clf = MulticlassClassifier(encoder)
+history = fit(clf, train_loader, num_epochs=10, valid_loader=test_loader)
+```
+
+```python
+set_seed(SEED)
+train_loader = get_train_loader(
+    dataset=MNIST(root_dir="/home/namu/myspace/NAMU/datasets/mnist", 
+        split="train", transform=T.Compose([T.ToTensor()]), binary=True), 
+    batch_size=64)
+test_loader = get_test_loader(
+    dataset=MNIST(root_dir="/home/namu/myspace/NAMU/datasets/mnist", 
+        split="test", transform=T.Compose([T.ToTensor()]), binary=True), 
+    batch_size=32)
+
+encoder = Encoder32(in_channels=1, latent_dim=1, base=BASE)
+clf = BinaryClassifier(encoder)
+history = fit(clf, train_loader, num_epochs=10, valid_loader=test_loader)
+```
