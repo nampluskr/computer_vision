@@ -104,8 +104,12 @@ class MNIST(Dataset):
     def __getitem__(self, idx):
         image = self.transform(self.images[idx])
         if self.binary:
-            label = torch.tensor(self.labels[idx] % 2).float().unsqueeze(-1)
-            class_name = "digit"
+            if self.labels[idx] % 2 == 0:
+                label = torch.tensor(0).float().unsqueeze(-1)
+                class_name = "even"
+            else:
+                label = torch.tensor(1).float().unsqueeze(-1)
+                class_name = "odd"
         else:
             label = torch.tensor(self.labels[idx]).long()
             class_name = self.CLASS_NAMES[label.item()]
