@@ -20,8 +20,8 @@ def get_dataloader_config():
     if platform.system() == "Windows":
         return {"num_workers": 0, "pin_memory": False, "persistent_workers": False}
     else:  # Linux (NAMU)
-        # return {"num_workers": 8, "pin_memory": True, "persistent_workers": True}  # WSL2
-        return {"num_workers": 8, "pin_memory": True, "persistent_workers": False}  # NAMU
+        return {"num_workers": 8, "pin_memory": True, "persistent_workers": True}  # WSL2
+        # return {"num_workers": 8, "pin_memory": True, "persistent_workers": False}  # NAMU
 
 
 def get_train_loader(dataset, batch_size, collate_fn=None):
@@ -105,10 +105,10 @@ class MNIST(Dataset):
         image = self.transform(self.images[idx])
         if self.binary:
             if self.labels[idx] % 2 == 0:
-                label = torch.tensor(0).float().unsqueeze(-1)
+                label = torch.tensor(0).long()
                 class_name = "even"
             else:
-                label = torch.tensor(1).float().unsqueeze(-1)
+                label = torch.tensor(1).long()
                 class_name = "odd"
         else:
             label = torch.tensor(self.labels[idx]).long()
