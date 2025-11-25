@@ -40,5 +40,5 @@ if __name__ == "__main__":
 
         encoder = VEncoder32(in_channels=3, latent_dim=LATENT_DIM)
         decoder = Decoder32(out_channels=3, latent_dim=LATENT_DIM)
-        vae = VAE(encoder, decoder)
+        vae = VAE(encoder, decoder, beta=0.0001)
         history = fit(vae, train_loader, num_epochs=NUM_EPOCHS, valid_loader=test_loader)
