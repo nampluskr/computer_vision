@@ -8,8 +8,8 @@ from datasets import get_train_loader, get_test_loader
 from trainer import train_gan
 from utils import set_seed
 from gan import GAN, CGAN, ACGAN
-from generators import Generator32, CGenerator32
-from discriminators import Discriminator32, CDiscriminator32, ACDiscriminator32
+from gan import Generator32, CGenerator32
+from gan import Discriminator32, CDiscriminator32, ACDiscriminator32
 
 
 SEED = 42
