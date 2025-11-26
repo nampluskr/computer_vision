@@ -15,7 +15,8 @@ class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.block = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(in_channels, out_channels, 
+                kernel_size=3, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(0.2, inplace=True),
         )
@@ -37,13 +38,13 @@ class Encoder32(nn.Module):
             ConvBlock(32, 64),
             ConvBlock(64, 128),
         )
-        self.flatten_size = 128 * 4 * 4
-        self.fc = nn.Linear(self.flatten_size, latent_dim)
+        self.flatten_dim = 128 * 4 * 4
+        self.fc = nn.Linear(self.flatten_dim, latent_dim)
 
     def forward(self, images):
         z = self.initial(images)
         z = self.blocks(z)
-        z = z.view(-1, self.flatten_size)
+        z = z.view(-1, self.flatten_dim)
         latent = self.fc(z)
         return latent
 
@@ -52,7 +53,6 @@ class VEncoder32(nn.Module):
     def __init__(self, in_channels=3, latent_dim=128):
         super().__init__()
         self.latent_dim = latent_dim
-
         self.initial = nn.Sequential(
             nn.Conv2d(in_channels, 32, kernel_size=3, stride=2, padding=1),
             nn.LeakyReLU(0.2, inplace=True),
@@ -61,9 +61,9 @@ class VEncoder32(nn.Module):
             ConvBlock(32, 64),
             ConvBlock(64, 128),
         )
-        self.flatten_size = 128 * 4 * 4
-        self.fc1 = nn.Linear(self.flatten_size, latent_dim)
-        self.fc2 = nn.Linear(self.flatten_size, latent_dim)
+        self.flatten_dim = 128 * 4 * 4
+        self.fc_mu = nn.Linear(self.flatten_dim, latent_dim)
+        self.fc_logvar = nn.Linear(self.flatten_dim, latent_dim)
 
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
@@ -72,8 +72,9 @@ class VEncoder32(nn.Module):
 
     def forward(self, images):
         z = self.initial(images)
-        z = self.blocks(z).view(-1, self.flatten_size)
-        mu, logvar = self.fc1(z), self.fc2(z)
+        z = self.blocks(z)
+        z = z.view(-1, self.flatten_dim)
+        mu, logvar = self.fc_mu(z), self.fc_logvar(z)
         latent = self.reparameterize(mu, logvar)
         return latent, mu, logvar
 
@@ -86,7 +87,8 @@ class DeconvBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.block = nn.Sequential(
-            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=3, stride=2, padding=1, output_padding=1),
+            nn.ConvTranspose2d(in_channels, out_channels, 
+                kernel_size=3, stride=2, padding=1, output_padding=1),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),
         )
@@ -106,16 +108,14 @@ class Decoder32(nn.Module):
             DeconvBlock(128, 64),
             DeconvBlock(64, 32),
         )
-        self.final = nn.Sequential(
-            nn.ConvTranspose2d(32, 3, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.Sigmoid()
-        )
+        self.final = nn.ConvTranspose2d(32, out_channels, 
+            kernel_size=3, stride=2, padding=1, output_padding=1)
 
     def forward(self, noises):
         x = self.initial(noises)
         x = self.blocks(x)
         x = self.final(x)
-        return x
+        return torch.sigmoid(x)
 
 
 #####################################################################
@@ -174,7 +174,7 @@ class VAE(nn.Module):
         self.parameters = list(self.encoder.parameters()) + list(self.decoder.parameters())
         self.optimizer = optim.Adam(self.parameters, lr=1e-3)
 
-        self.mse_loss = nn.MSELoss()
+        self.recon_loss_fn = nn.MSELoss(reduction="mean")
         self.ssim_metric = StructuralSimilarityIndexMeasure(data_range=1.0).to(self.device)
 
         self.beta = beta
@@ -185,7 +185,7 @@ class VAE(nn.Module):
         return recon, mu, logvar
 
     def loss_fn(self, recon, images, mu, logvar):
-        recon_loss = self.mse_loss(recon, images)
+        recon_loss = self.recon_loss_fn(recon, images)
         kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1).mean()
         loss = recon_loss + self.beta * kld_loss
         return loss, recon_loss, kld_loss
