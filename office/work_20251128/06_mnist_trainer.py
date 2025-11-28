@@ -68,6 +68,10 @@ def sigmoid(x):
     return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
 
 
+def relu(x):
+    return np.where(x >= 0, x, 0)
+
+
 def softmax(x):
     e_x = np.exp(x - np.max(x, axis=1, keepdims=True))
     return e_x / np.sum(e_x, axis=1, keepdims=True)
@@ -129,11 +133,11 @@ class Sigmoid(Module):
 class ReLU(Module):
     def forward(self, x):
         self.mask = x <= 0
-        out = np.copy(x)
-        out[self.mask] = 0
-        return out
+        self.out = relu(x)
+        return self.out
 
     def backward(self, dout):
+        dout = dout.copy()
         dout[self.mask] = 0
         return dout
 
