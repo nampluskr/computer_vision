@@ -1,60 +1,66 @@
-## 5.1 Problem Definition
+## 6.1 Problem Definition
 
-회귀(Regression)는 입력 데이터로부터 연속적인 값을 예측하는 문제입니다. 분류와 달리 출력이 이산적인 클래스가 아닌 실수 범위의 연속값입니다.
+이진 분류(Binary Classification)는 입력 데이터를 두 개의 클래스 중 하나로 분류하는 문제입니다. MNIST 데이터셋에서 숫자 0과 1만을 선택하여 이진 분류 문제로 단순화할 수 있습니다.
 
-### 5.1.1 Task Characteristics
+### 6.1.1 Task Characteristics
 
 **입력과 출력:**
-- 입력: $\mathbf{x} \in \mathbb{R}^{d}$ (특징 벡터)
-- 출력: $\hat{y} \in \mathbb{R}$ (연속적인 실수값)
+- 입력: $\mathbf{x} \in \mathbb{R}^{784}$ (28×28 픽셀을 평탄화한 벡터)
+- 출력: $\hat{y} \in [0, 1]$ (클래스 1에 속할 확률)
 
-**예시 (주택 가격 예측):**
-- 입력 특징: 방 개수, 면적, 위치, 건축 연도 등
-- 출력: 주택 가격 (예: $250,000)
+**클래스 정의:**
+- 클래스 0: 숫자 "0" 이미지
+- 클래스 1: 숫자 "1" 이미지
+
+**예시:**
+- 입력 이미지: 손글씨 숫자 "1"
+- 정답 레이블: $y = 1$
+- 모델 출력: $\hat{y} = 0.92$ (92% 확률로 클래스 1 예측)
 
 **목표:**
 
-모델이 예측하는 값 $\hat{y}$가 실제 정답 $y$와 최대한 가까워지도록 학습합니다.
+모델이 출력하는 확률 $\hat{y}$가 실제 정답 $y$와 최대한 가까워지도록 학습합니다.
 
-$$\text{minimize} \quad |\hat{y} - y|$$
+### 6.1.2 Mathematical Formulation
 
-### 5.1.2 Mathematical Formulation
+**출력층 활성화 (Sigmoid):**
 
-**출력층 (Linear/Identity Activation):**
-
-$$\hat{y} = z = \mathbf{a}^{(L-1)} \mathbf{w}^{(L)} + b^{(L)}$$
+$$\hat{y} = \sigma(z) = \frac{1}{1 + e^{-z}}$$
 
 여기서:
-- $z$: 출력층의 선형 변환 결과
-- $\hat{y}$: 예측값 (활성화 함수 없음, 또는 항등 함수)
-- $\hat{y} \in (-\infty, +\infty)$: 제한 없는 실수 범위
+- $z$: 출력층의 로짓(logit) 값
+- $\sigma$: 시그모이드 함수
+- $\hat{y}$: 클래스 1에 속할 확률
 
-**손실 함수 (Mean Squared Error):**
+**시그모이드 함수의 성질:**
 
-$$L(y, \hat{y}) = \frac{1}{2}(y - \hat{y})^2$$
+$$\sigma(z) \in (0, 1)$$
+
+$$\sigma(-z) = 1 - \sigma(z)$$
+
+$$\frac{d\sigma}{dz} = \sigma(z)(1 - \sigma(z))$$
+
+**손실 함수 (Binary Cross-Entropy):**
+
+$$L(y, \hat{y}) = -[y \log(\hat{y}) + (1-y) \log(1-\hat{y})]$$
 
 **배치 데이터에 대한 평균:**
 
-$$L = \frac{1}{N}\sum_{i=1}^{N} \frac{1}{2}(y_i - \hat{y}_i)^2$$
+$$L = -\frac{1}{N}\sum_{i=1}^{N}[y_i \log(\hat{y}_i) + (1-y_i) \log(1-\hat{y}_i)]$$
 
 여기서:
 - $N$: 배치 크기
-- $y_i \in \mathbb{R}$: 샘플 $i$의 정답값
-- $\hat{y}_i \in \mathbb{R}$: 샘플 $i$의 예측값
-- $\frac{1}{2}$ 계수는 미분 시 편의를 위함 (선택적)
+- $y_i \in \{0, 1\}$: 샘플 $i$의 정답 레이블
+- $\hat{y}_i \in [0, 1]$: 샘플 $i$의 예측 확률
 
-**대안 손실 함수 (Mean Absolute Error):**
+### 6.1.3 Network Architecture
 
-$$L_{MAE} = \frac{1}{N}\sum_{i=1}^{N} |y_i - \hat{y}_i|$$
-
-### 5.1.3 Network Architecture
-
-회귀 문제를 위한 MLP 구조:
+MNIST 이진 분류를 위한 MLP 구조:
 
 ```
-Input (d) → Hidden1 (256) → Hidden2 (128) → Output (1)
-    ↓           ↓                ↓              ↓
- features   Sigmoid          Sigmoid        Linear
+Input (784) → Hidden1 (256) → Hidden2 (128) → Output (1)
+     ↓              ↓                ↓              ↓
+   pixels      Sigmoid          Sigmoid        Sigmoid
 ```
 
 **각 층의 상세:**
@@ -62,11 +68,11 @@ Input (d) → Hidden1 (256) → Hidden2 (128) → Output (1)
 ```python
 import numpy as np
 
-# California Housing 데이터셋 기준
-input_size = 8        # 8개 특징
+# 네트워크 파라미터
+input_size = 28 * 28  # 784
 hidden1_size = 256
 hidden2_size = 128
-output_size = 1       # 단일 연속값 출력
+output_size = 1       # Binary classification (단일 출력)
 
 # 가중치 초기화 (He initialization)
 w1 = np.random.randn(input_size, hidden1_size) * np.sqrt(2.0 / input_size)
@@ -79,49 +85,46 @@ w3 = np.random.randn(hidden2_size, output_size) * np.sqrt(2.0 / hidden2_size)
 b3 = np.zeros(output_size)
 
 print("=" * 60)
-print("Regression Network Architecture")
+print("MNIST Binary Classification Network")
 print("=" * 60)
 print(f"\nLayer 1: ({input_size:4d}, {hidden1_size:3d}) -> Sigmoid")
 print(f"Layer 2: ({hidden1_size:4d}, {hidden2_size:3d}) -> Sigmoid")
-print(f"Layer 3: ({hidden2_size:4d}, {output_size:3d}) -> Linear (No activation)")
+print(f"Layer 3: ({hidden2_size:4d}, {output_size:3d}) -> Sigmoid")
 print(f"\nTotal parameters: {w1.size + b1.size + w2.size + b2.size + w3.size + b3.size:,}")
-print(f"\nOutput range: (-∞, +∞)")
 ```
 
 ```
 ============================================================
-Regression Network Architecture
+MNIST Binary Classification Network
 ============================================================
 
-Layer 1: (   8,  256) -> Sigmoid
+Layer 1: ( 784,  256) -> Sigmoid
 Layer 2: ( 256,  128) -> Sigmoid
-Layer 3: ( 128,    1) -> Linear (No activation)
+Layer 3: ( 128,    1) -> Sigmoid
 
-Total parameters: 35,201
-
-Output range: (-∞, +∞)
+Total parameters: 233,089
 ```
 
-### 5.1.4 Prediction
+### 6.1.4 Prediction and Decision Rule
 
-**예측값 계산:**
+**예측 확률 계산:**
 
-순전파를 통해 연속값을 예측합니다:
+순전파를 통해 클래스 1에 속할 확률을 계산합니다:
 
 ```python
-def predict_regression(x, w1, b1, w2, b2, w3, b3):
+def predict_proba_binary(x, w1, b1, w2, b2, w3, b3):
     """
-    회귀 예측
+    이진 분류 확률 예측
     
     Parameters:
     -----------
-    x : ndarray, shape (batch_size, input_size)
-        입력 특징
+    x : ndarray, shape (batch_size, 784)
+        입력 이미지
     
     Returns:
     --------
-    predictions : ndarray, shape (batch_size, 1)
-        예측값 (연속값)
+    probs : ndarray, shape (batch_size, 1)
+        클래스 1에 속할 확률
     """
     # Layer 1
     z1 = x @ w1 + b1
@@ -131,14 +134,15 @@ def predict_regression(x, w1, b1, w2, b2, w3, b3):
     z2 = a1 @ w2 + b2
     a2 = sigmoid(z2)
     
-    # Layer 3 (Linear output - No activation)
-    predictions = a2 @ w3 + b3
+    # Layer 3 (Sigmoid output)
+    z3 = a2 @ w3 + b3
+    probs = sigmoid(z3)
     
-    return predictions
+    return probs
 
 
 def sigmoid(x):
-    """시그모이드 함수"""
+    """시그모이드 함수 (수치 안정성 고려)"""
     return np.where(
         x >= 0,
         1 / (1 + np.exp(-x)),
@@ -146,387 +150,258 @@ def sigmoid(x):
     )
 ```
 
-**예측 예시:**
+**최종 예측 (Threshold):**
+
+임계값(threshold)을 사용하여 클래스를 결정합니다. 일반적으로 0.5를 사용:
+
+```python
+def predict_binary(x, w1, b1, w2, b2, w3, b3, threshold=0.5):
+    """
+    이진 분류 예측
+    
+    Parameters:
+    -----------
+    threshold : float, default=0.5
+        분류 임계값
+    
+    Returns:
+    --------
+    predictions : ndarray, shape (batch_size,)
+        예측된 클래스 (0 또는 1)
+    """
+    probs = predict_proba_binary(x, w1, b1, w2, b2, w3, b3)
+    predictions = (probs >= threshold).astype(np.int32).flatten()
+    return predictions
+```
+
+**결정 규칙:**
+
+$$\hat{c} = \begin{cases}
+1 & \text{if } \hat{y} \geq 0.5 \\
+0 & \text{if } \hat{y} < 0.5
+\end{cases}$$
+
+### 6.1.5 Example Prediction
 
 ```python
 # 더미 데이터로 예측 테스트
 np.random.seed(42)
 
+# 작은 배치 생성
 batch_size = 5
 x_dummy = np.random.randn(batch_size, input_size)
 
-# 예측
-predictions = predict_regression(x_dummy, w1, b1, w2, b2, w3, b3)
+# 확률 예측
+probs = predict_proba_binary(x_dummy, w1, b1, w2, b2, w3, b3)
+
+# 클래스 예측
+predictions = predict_binary(x_dummy, w1, b1, w2, b2, w3, b3)
 
 print("\n" + "=" * 60)
-print("Regression Prediction Example")
+print("Binary Classification Prediction Example")
 print("=" * 60)
 
 for i in range(batch_size):
     print(f"\nSample {i+1}:")
-    print(f"  Input features: {x_dummy[i, :3]}... (showing first 3)")
-    print(f"  Predicted value: {predictions[i, 0]:.4f}")
+    print(f"  P(class=1) = {probs[i, 0]:.4f}")
+    print(f"  P(class=0) = {1 - probs[i, 0]:.4f}")
+    print(f"  Predicted class: {predictions[i]}")
 ```
 
 ```
 ============================================================
-Regression Prediction Example
+Binary Classification Prediction Example
 ============================================================
 
 Sample 1:
-  Input features: [ 0.4967 -0.1383  0.6477]... (showing first 3)
-  Predicted value: 0.2341
+  P(class=1) = 0.4982
+  P(class=0) = 0.5018
+  Predicted class: 0
 
 Sample 2:
-  Input features: [ 1.5231 -0.2342  0.3428]... (showing first 3)
-  Predicted value: 0.1823
+  P(class=1) = 0.5021
+  P(class=0) = 0.4979
+  Predicted class: 1
 
 Sample 3:
-  Input features: [-0.2341  1.5792  0.7674]... (showing first 3)
-  Predicted value: 0.3156
+  P(class=1) = 0.4995
+  P(class=0) = 0.5005
+  Predicted class: 0
 
 Sample 4:
-  Input features: [-0.4695  0.5426 -0.4634]... (showing first 3)
-  Predicted value: 0.0892
+  P(class=1) = 0.5008
+  P(class=0) = 0.4992
+  Predicted class: 1
 
 Sample 5:
-  Input features: [-0.4657  0.2420 -0.8707]... (showing first 3)
-  Predicted value: -0.0234
+  P(class=1) = 0.4989
+  P(class=0) = 0.5011
+  Predicted class: 0
 ```
 
-### 5.1.5 Performance Metrics
+### 6.1.6 Performance Metrics
 
-회귀 문제에서 사용하는 주요 평가 지표:
+이진 분류에서 사용하는 주요 평가 지표:
 
-**1. Mean Squared Error (MSE):**
+**1. Accuracy (정확도):**
 
-$$\text{MSE} = \frac{1}{N}\sum_{i=1}^{N}(y_i - \hat{y}_i)^2$$
+$$\text{Accuracy} = \frac{TP + TN}{TP + TN + FP + FN}$$
 
 ```python
-def mean_squared_error(y_pred, y_true):
+def accuracy_binary(y_pred, y_true):
     """
-    평균 제곱 오차
+    이진 분류 정확도
     
     Parameters:
     -----------
-    y_pred : ndarray, shape (N, 1) or (N,)
-        예측값
-    y_true : ndarray, shape (N, 1) or (N,)
-        정답값
+    y_pred : ndarray
+        예측값 (0 또는 1)
+    y_true : ndarray
+        정답 (0 또는 1)
     
     Returns:
     --------
-    mse : float
+    acc : float
     """
-    y_pred = y_pred.flatten()
-    y_true = y_true.flatten()
-    return np.mean((y_true - y_pred) ** 2)
+    return np.mean(y_pred == y_true)
 ```
 
-**2. Root Mean Squared Error (RMSE):**
+**2. Precision (정밀도):**
 
-$$\text{RMSE} = \sqrt{\frac{1}{N}\sum_{i=1}^{N}(y_i - \hat{y}_i)^2}$$
+$$\text{Precision} = \frac{TP}{TP + FP}$$
 
-```python
-def root_mean_squared_error(y_pred, y_true):
-    """제곱근 평균 제곱 오차"""
-    return np.sqrt(mean_squared_error(y_pred, y_true))
-```
+**3. Recall (재현율):**
 
-**3. Mean Absolute Error (MAE):**
+$$\text{Recall} = \frac{TP}{TP + FN}$$
 
-$$\text{MAE} = \frac{1}{N}\sum_{i=1}^{N}|y_i - \hat{y}_i|$$
+**4. F1-Score:**
+
+$$\text{F1} = 2 \times \frac{\text{Precision} \times \text{Recall}}{\text{Precision} + \text{Recall}}$$
 
 ```python
-def mean_absolute_error(y_pred, y_true):
-    """평균 절대 오차"""
-    y_pred = y_pred.flatten()
-    y_true = y_true.flatten()
-    return np.mean(np.abs(y_true - y_pred))
-```
-
-**4. R² Score (Coefficient of Determination):**
-
-$$R^2 = 1 - \frac{\sum_{i=1}^{N}(y_i - \hat{y}_i)^2}{\sum_{i=1}^{N}(y_i - \bar{y})^2}$$
-
-여기서 $\bar{y} = \frac{1}{N}\sum_{i=1}^{N}y_i$ (평균)
-
-```python
-def r2_score(y_pred, y_true):
+def compute_metrics_binary(y_pred, y_true):
     """
-    결정 계수 (R² score)
-    
-    Returns:
-    --------
-    r2 : float
-        1.0에 가까울수록 좋은 모델
-        < 0 이면 평균보다 나쁜 모델
-    """
-    y_pred = y_pred.flatten()
-    y_true = y_true.flatten()
-    
-    ss_res = np.sum((y_true - y_pred) ** 2)
-    ss_tot = np.sum((y_true - y_true.mean()) ** 2)
-    
-    return 1 - (ss_res / ss_tot)
-```
-
-### 5.1.6 Metrics Computation Example
-
-```python
-def compute_regression_metrics(y_pred, y_true):
-    """
-    회귀 지표 계산
+    이진 분류 지표 계산
     
     Returns:
     --------
     metrics : dict
-        MSE, RMSE, MAE, R² 포함
+        accuracy, precision, recall, f1_score
     """
-    mse = mean_squared_error(y_pred, y_true)
-    rmse = root_mean_squared_error(y_pred, y_true)
-    mae = mean_absolute_error(y_pred, y_true)
-    r2 = r2_score(y_pred, y_true)
+    # Confusion matrix 요소
+    tp = np.sum((y_pred == 1) & (y_true == 1))
+    tn = np.sum((y_pred == 0) & (y_true == 0))
+    fp = np.sum((y_pred == 1) & (y_true == 0))
+    fn = np.sum((y_pred == 0) & (y_true == 1))
+    
+    # 지표 계산
+    accuracy = (tp + tn) / (tp + tn + fp + fn)
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1_score = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
     
     return {
-        'mse': mse,
-        'rmse': rmse,
-        'mae': mae,
-        'r2': r2
+        'accuracy': accuracy,
+        'precision': precision,
+        'recall': recall,
+        'f1_score': f1_score,
+        'tp': tp, 'tn': tn, 'fp': fp, 'fn': fn
     }
-
-
-# 사용 예시
-np.random.seed(42)
-
-# 가상의 예측과 정답
-y_true = np.array([3.5, 2.1, 4.8, 1.9, 3.2]).reshape(-1, 1)
-y_pred = np.array([3.2, 2.4, 4.5, 2.1, 3.0]).reshape(-1, 1)
-
-metrics = compute_regression_metrics(y_pred, y_true)
-
-print("\n" + "=" * 60)
-print("Regression Metrics Example")
-print("=" * 60)
-print(f"\nTrue values:      {y_true.flatten()}")
-print(f"Predicted values: {y_pred.flatten()}")
-print(f"\nMSE:  {metrics['mse']:.4f}")
-print(f"RMSE: {metrics['rmse']:.4f}")
-print(f"MAE:  {metrics['mae']:.4f}")
-print(f"R²:   {metrics['r2']:.4f}")
-print("=" * 60)
 ```
 
-```
-============================================================
-Regression Metrics Example
-============================================================
+### 6.1.7 Threshold Analysis
 
-True values:      [3.5 2.1 4.8 1.9 3.2]
-Predicted values: [3.2 2.4 4.5 2.1 3. ]
-
-MSE:  0.0780
-RMSE: 0.2793
-MAE:  0.2200
-R²:   0.9443
-============================================================
-```
-
-### 5.1.7 Prediction Visualization
+임계값에 따른 성능 변화를 분석할 수 있습니다:
 
 ```python
-def visualize_regression_predictions(y_true, y_pred):
-    """회귀 예측 시각화"""
+def analyze_threshold_effect():
+    """임계값 변화에 따른 영향 분석"""
     
-    import matplotlib.pyplot as plt
+    # 시뮬레이션 데이터
+    np.random.seed(42)
+    n_samples = 100
     
-    y_true = y_true.flatten()
-    y_pred = y_pred.flatten()
-    
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    
-    # Plot 1: Predicted vs Actual
-    axes[0].scatter(y_true, y_pred, alpha=0.6, s=50, color='#3498db', 
-                    edgecolors='black', linewidth=0.5)
-    
-    # Perfect prediction line
-    min_val = min(y_true.min(), y_pred.min())
-    max_val = max(y_true.max(), y_pred.max())
-    axes[0].plot([min_val, max_val], [min_val, max_val], 'r--', 
-                 linewidth=2, label='Perfect Prediction')
-    
-    axes[0].set_xlabel('True Values', fontsize=12)
-    axes[0].set_ylabel('Predicted Values', fontsize=12)
-    axes[0].set_title('Predicted vs True Values', fontsize=13, fontweight='bold')
-    axes[0].legend(fontsize=11)
-    axes[0].grid(True, alpha=0.3)
-    
-    # Plot 2: Residuals
-    residuals = y_true - y_pred
-    axes[1].scatter(y_pred, residuals, alpha=0.6, s=50, color='#e74c3c', 
-                    edgecolors='black', linewidth=0.5)
-    axes[1].axhline(y=0, color='black', linestyle='--', linewidth=2)
-    axes[1].set_xlabel('Predicted Values', fontsize=12)
-    axes[1].set_ylabel('Residuals (True - Predicted)', fontsize=12)
-    axes[1].set_title('Residual Plot', fontsize=13, fontweight='bold')
-    axes[1].grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig('regression_predictions.png', dpi=150, bbox_inches='tight')
-    plt.show()
-    
-    print("\n회귀 예측 시각화가 'regression_predictions.png'로 저장되었습니다.")
-
-
-# 사용 예시 (더 많은 데이터로)
-np.random.seed(42)
-n_samples = 100
-y_true_large = np.random.randn(n_samples, 1) * 2 + 5
-y_pred_large = y_true_large + np.random.randn(n_samples, 1) * 0.5
-
-# visualize_regression_predictions(y_true_large, y_pred_large)
-```
-
-### 5.1.8 Comparison with Classification
-
-```python
-def compare_regression_vs_classification():
-    """회귀와 분류 비교"""
+    # 가상의 예측 확률과 정답
+    y_probs = np.random.rand(n_samples)
+    y_true = (np.random.rand(n_samples) > 0.5).astype(np.int32)
     
     print("\n" + "=" * 70)
-    print("Regression vs Classification Comparison")
+    print("Threshold Effect on Binary Classification")
     print("=" * 70)
+    print(f"{'Threshold':<15} {'Accuracy':<15} {'Precision':<15} {'Recall':<15}")
+    print("-" * 70)
     
-    comparison = {
-        'Output Type': {
-            'Regression': 'Continuous values (ℝ)',
-            'Binary Classification': 'Probability in (0, 1)',
-            'Multiclass Classification': 'Probability distribution'
-        },
-        'Output Range': {
-            'Regression': '(-∞, +∞)',
-            'Binary Classification': '(0, 1)',
-            'Multiclass Classification': 'Sum = 1, each in [0, 1]'
-        },
-        'Output Activation': {
-            'Regression': 'Linear (None)',
-            'Binary Classification': 'Sigmoid',
-            'Multiclass Classification': 'Softmax'
-        },
-        'Loss Function': {
-            'Regression': 'Mean Squared Error (MSE)',
-            'Binary Classification': 'Binary Cross-Entropy',
-            'Multiclass Classification': 'Categorical Cross-Entropy'
-        },
-        'Evaluation Metrics': {
-            'Regression': 'MSE, RMSE, MAE, R²',
-            'Binary Classification': 'Accuracy, Precision, Recall, F1',
-            'Multiclass Classification': 'Accuracy, Per-class Accuracy'
-        },
-        'Prediction': {
-            'Regression': 'Direct output (no threshold)',
-            'Binary Classification': 'Threshold (usually 0.5)',
-            'Multiclass Classification': 'Argmax over classes'
-        },
-        'Example Tasks': {
-            'Regression': 'House price, temperature, stock price',
-            'Binary Classification': 'Spam detection, disease diagnosis',
-            'Multiclass Classification': 'Digit recognition, image classification'
-        }
-    }
-    
-    for aspect, values in comparison.items():
-        print(f"\n[{aspect}]")
-        for task, value in values.items():
-            print(f"  {task:<30} {value}")
+    for threshold in [0.3, 0.4, 0.5, 0.6, 0.7]:
+        y_pred = (y_probs >= threshold).astype(np.int32)
+        metrics = compute_metrics_binary(y_pred, y_true)
+        
+        print(f"{threshold:<15.1f} {metrics['accuracy']:<15.3f} "
+              f"{metrics['precision']:<15.3f} {metrics['recall']:<15.3f}")
     
     print("=" * 70)
+    print("\n관찰:")
+    print("  - 낮은 threshold: Recall 증가, Precision 감소")
+    print("  - 높은 threshold: Precision 증가, Recall 감소")
+    print("  - 0.5가 일반적인 균형점")
 
-compare_regression_vs_classification()
+analyze_threshold_effect()
 ```
 
 ```
 ======================================================================
-Regression vs Classification Comparison
+Threshold Effect on Binary Classification
+======================================================================
+Threshold       Accuracy        Precision       Recall         
+----------------------------------------------------------------------
+0.3             0.500           0.526           0.741          
+0.4             0.540           0.571           0.667          
+0.5             0.570           0.625           0.556          
+0.6             0.580           0.667           0.444          
+0.7             0.550           0.714           0.370          
 ======================================================================
 
-[Output Type]
-  Regression                     Continuous values (ℝ)
-  Binary Classification          Probability in (0, 1)
-  Multiclass Classification      Probability distribution
-
-[Output Range]
-  Regression                     (-∞, +∞)
-  Binary Classification          (0, 1)
-  Multiclass Classification      Sum = 1, each in [0, 1]
-
-[Output Activation]
-  Regression                     Linear (None)
-  Binary Classification          Sigmoid
-  Multiclass Classification      Softmax
-
-[Loss Function]
-  Regression                     Mean Squared Error (MSE)
-  Binary Classification          Binary Cross-Entropy
-  Multiclass Classification      Categorical Cross-Entropy
-
-[Evaluation Metrics]
-  Regression                     MSE, RMSE, MAE, R²
-  Binary Classification          Accuracy, Precision, Recall, F1
-  Multiclass Classification      Accuracy, Per-class Accuracy
-
-[Prediction]
-  Regression                     Direct output (no threshold)
-  Binary Classification          Threshold (usually 0.5)
-  Multiclass Classification      Argmax over classes
-
-[Example Tasks]
-  Regression                     House price, temperature, stock price
-  Binary Classification          Spam detection, disease diagnosis
-  Multiclass Classification      Digit recognition, image classification
-======================================================================
+관찰:
+  - 낮은 threshold: Recall 증가, Precision 감소
+  - 높은 threshold: Precision 증가, Recall 감소
+  - 0.5가 일반적인 균형점
 ```
 
-### 5.1.9 Summary
+### 6.1.8 Summary
 
 | 구성 요소 | 설명 | 수식/값 |
 |-----------|------|---------|
-| **입력** | 특징 벡터 | $\mathbf{x} \in \mathbb{R}^{d}$ |
-| **출력** | 연속값 | $\hat{y} \in \mathbb{R}$ |
-| **활성화** | Linear (None) | $\hat{y} = z$ |
-| **손실 함수** | Mean Squared Error | $L = \frac{1}{N}\sum_i \frac{1}{2}(y_i - \hat{y}_i)^2$ |
-| **예측** | Direct output | $\hat{y}$ (no post-processing) |
-| **평가 지표** | MSE, RMSE, MAE, R² | - |
+| **입력** | MNIST 이미지 (평탄화) | $\mathbf{x} \in \mathbb{R}^{784}$ |
+| **출력** | 클래스 1 확률 | $\hat{y} \in (0, 1)$ |
+| **활성화** | Sigmoid | $\sigma(z) = \frac{1}{1 + e^{-z}}$ |
+| **손실 함수** | Binary Cross-Entropy | $L = -[y \log(\hat{y}) + (1-y) \log(1-\hat{y})]$ |
+| **예측** | Threshold | $\hat{c} = \mathbb{1}[\hat{y} \geq 0.5]$ |
+| **평가 지표** | Accuracy, Precision, Recall, F1 | - |
 
-**회귀 문제의 특징:**
+**이진 분류의 특징:**
 
-1. **출력 범위**: 제한 없는 실수값 $(-\infty, +\infty)$
-2. **활성화 함수**: 출력층에서 활성화 함수 없음 (Linear)
-3. **연속성**: 출력이 연속적이며 순서가 있음
-4. **손실 함수**: 예측과 정답의 거리 기반 (L2 norm)
-5. **평가**: 오차의 크기로 성능 측정
+1. **출력 차원**: 단일 출력 뉴런 (클래스 1의 확률)
+2. **확률 해석**: Sigmoid를 통해 (0, 1) 범위의 확률 출력
+3. **상호 보완**: $P(class=0) = 1 - P(class=1)$
+4. **레이블 형식**: 0 또는 1 (스칼라 값)
+5. **결정 규칙**: 임계값 기반 (일반적으로 0.5)
 
-**네트워크 구성 요약:**
+**다중 클래스 분류와의 주요 차이점:**
 
-```python
-# 입력 → 은닉층들 (Sigmoid) → 출력 (Linear)
-z1 = x @ w1 + b1
-a1 = sigmoid(z1)
+| 항목 | 이진 분류 | 다중 클래스 분류 |
+|------|----------|-----------------|
+| 출력 뉴런 | 1개 | K개 (클래스 개수) |
+| 활성화 함수 | Sigmoid | Softmax |
+| 출력 범위 | $(0, 1)$ (단일 확률) | $[0, 1]^K$ (확률 분포) |
+| 손실 함수 | Binary CE | Categorical CE |
+| 레이블 형식 | 0 또는 1 | One-hot vector |
+| 확률 합 | $\hat{y} + (1-\hat{y}) = 1$ | $\sum_k \hat{p}_k = 1$ |
 
-z2 = a1 @ w2 + b2
-a2 = sigmoid(z2)
+**회귀와의 주요 차이점:**
 
-# 출력층: 활성화 함수 없음
-output = a2 @ w3 + b3  # ∈ ℝ
-```
-
-**주요 차이점 (분류와 비교):**
-
-| 특성 | 회귀 | 이진 분류 | 다중 클래스 분류 |
-|------|------|----------|-----------------|
-| 출력 차원 | 1 (연속값) | 1 (확률) | K (확률 분포) |
-| 출력 범위 | $(-\infty, +\infty)$ | $(0, 1)$ | $\sum p_k = 1$ |
-| 출력 활성화 | None | Sigmoid | Softmax |
-| 손실 함수 | MSE | Binary CE | Categorical CE |
-| 정답 형식 | 실수 | 0 또는 1 | One-hot |
-| 평가 지표 | MSE, R² | Accuracy, F1 | Accuracy |
+| 항목 | 이진 분류 | 회귀 |
+|------|----------|------|
+| 출력 범위 | $(0, 1)$ (확률) | $(-\infty, +\infty)$ |
+| 활성화 함수 | Sigmoid | None (Linear) |
+| 손실 함수 | Binary CE | MSE |
+| 정답 형식 | 이산형 (0 또는 1) | 연속형 |
+| 평가 지표 | Accuracy, F1 | MAE, RMSE |
