@@ -244,12 +244,12 @@ Gradient shapes (should match parameter shapes):
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Training Cycle                                       │
+│                         Training Cycle                                      │
 └─────────────────────────────────────────────────────────────────────────────┘
 
   ┌─────────────────────────────────────────────────────────────────────────┐
-  │                          FORWARD PASS                                    │
-  │                      (Compute predictions)                               │
+  │                          FORWARD PASS                                   │
+  │                      (Compute predictions)                              │
   └─────────────────────────────────────────────────────────────────────────┘
   
       x ──────► Linear ──────► Sigmoid ──────► Linear ──────► Sigmoid ──────►
@@ -265,8 +265,8 @@ Gradient shapes (should match parameter shapes):
               [save]          [save]
 
   ┌─────────────────────────────────────────────────────────────────────────┐
-  │                         BACKWARD PASS                                    │
-  │                      (Compute gradients)                                 │
+  │                         BACKWARD PASS                                   │
+  │                      (Compute gradients)                                │
   └─────────────────────────────────────────────────────────────────────────┘
 
       L ──────► dL/dz3 ──────► dL/da2 ──────► dL/dz2 ──────► dL/da1 ──────►
@@ -284,8 +284,8 @@ Gradient shapes (should match parameter shapes):
               dL/db1
 
   ┌─────────────────────────────────────────────────────────────────────────┐
-  │                         PARAMETER UPDATE                                 │
-  │                      (Gradient descent)                                  │
+  │                         PARAMETER UPDATE                                │
+  │                      (Gradient descent)                                 │
   └─────────────────────────────────────────────────────────────────────────┘
 
       W1 ← W1 - η * dL/dW1        W2 ← W2 - η * dL/dW2        W3 ← W3 - η * dL/dW3
