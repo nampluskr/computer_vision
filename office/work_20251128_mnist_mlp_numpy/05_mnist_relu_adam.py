@@ -52,8 +52,10 @@ class DataLoader:
 
         for i in range(self.num_batches):
             start = i * self.batch_size
-            end = start + self.batch_size
-            yield self.images[indices[start:end]], self.labels[indices[start:end]]
+            end = (i + 1) * self.batch_size
+            images = self.images[indices[start:end]]
+            labels = self.labels[indices[start:end]]
+            yield images, labels
 
 
 #################################################################
@@ -69,21 +71,46 @@ def sigmoid(x):
 
 
 def relu(x):
-    return np.where(x >= 0, x, 0)
+    return np.maximum(0, x)
 
 
 def softmax(x):
+    if x.ndim == 1:
+        e_x = np.exp(x - np.max(x))
+        return e_x / np.sum(e_x)
     e_x = np.exp(x - np.max(x, axis=1, keepdims=True))
     return e_x / np.sum(e_x, axis=1, keepdims=True)
 
 
 def cross_entropy(preds, targets):
     batch_size = preds.shape[0]
-    return -np.sum(targets*np.log(preds + 1.0E-8)) / batch_size
+    if targets.ndim == 1:
+        probs = preds[np.arange(batch_size), targets]
+    else:   # one-hot labels
+        probs = np.sum(preds * targets, axis=1)
+    return -np.mean(np.log(probs + 1e-8))
+
+
+def log_softmax(x):
+    if x.ndim == 1:
+        return x - np.max(x) - np.log(np.sum(np.exp(x - np.max(x))))
+    max_x = np.max(x, axis=1, keepdims=True)
+    return x - max_x - np.log(np.sum(np.exp(x - max_x), axis=1, keepdims=True))
+
+
+def cross_entropy_with_logits(logits, targets):
+    log_probs = log_softmax(logits)
+    if targets.ndim == 1:
+        batch_size = logits.shape[0]
+        return -np.mean(log_probs[np.arange(batch_size), targets])
+    return -np.mean(np.sum(targets * log_probs, axis=1))
 
 
 def accuracy(preds, targets):
-    return (preds.argmax(axis=1) == targets.argmax(axis=1)).mean()
+    preds = preds.argmax(axis=1)
+    if targets.ndim == 2:
+        targets = targets.argmax(axis=1)
+    return (preds == targets).mean()
 
 
 #################################################################
@@ -174,10 +201,16 @@ class CrossEntropyWithLogits:
     def forward(self, logits, targets):
         self.preds = softmax(logits)
         self.targets = targets
-        return cross_entropy(self.preds, self.targets)
+        return cross_entropy_with_logits(logits, targets)
 
     def backward(self):
-        return (self.preds - self.targets) / self.targets.shape[0]
+        batch_size = self.preds.shape[0]
+        if self.targets.ndim == 1:
+            grad = self.preds.copy()
+            grad[np.arange(batch_size), self.targets] -= 1
+            return grad / batch_size
+        else:  # one-hot labels
+            return (self.preds - self.targets) / batch_size
 
 
 #################################################################
@@ -194,11 +227,11 @@ class Optimizer:
 class SGD(Optimizer):
     def step(self):
         for param, grad in zip(self.params, self.grads):
-            param -= self.lr * grad
+            param[...] -= self.lr * grad
 
 
 class Adam(Optimizer):
-    def __init__(self, model, lr, beta1=0.0, beta2=0.999):
+    def __init__(self, model, lr, beta1=0.9, beta2=0.999):
         super().__init__(model, lr)
         self.beta1 = beta1
         self.beta2 = beta2
@@ -209,112 +242,13 @@ class Adam(Optimizer):
     def step(self):
         self.iter += 1
         for param, grad, m, v in zip(self.params, self.grads, self.ms, self.vs):
-            m *= self.beta1
-            m += (1 - self.beta1) * grad
-            m_hat = m / (1.0 - self.beta1 ** self.iter)
+            m[...] = self.beta1 * m + (1 - self.beta1) * grad
+            v[...] = self.beta2 * v + (1 - self.beta2) * (grad ** 2)
 
-            v *= self.beta2
-            v += (1 - self.beta2) * (grad ** 2)
+            m_hat = m / (1.0 - self.beta1 ** self.iter)
             v_hat = v / (1.0 - self.beta2 ** self.iter)
 
-            param -= self.lr * m_hat / (np.sqrt(v_hat) + 1e-8)
-
-
-#################################################################
-## Trainer
-#################################################################
-
-import sys
-from tqdm import tqdm
-
-
-class Classifier:
-    def __init__(self, model):
-        self.model = model
-        self.optimizer = Adam(model, lr=0.001)
-        self.loss_fn = CrossEntropyWithLogits()
-        self.acc_metric = accuracy
-
-    def train_step(self, images, labels):
-        logits = self.model(images)
-        loss = self.loss_fn(logits, labels)
-        acc = self.acc_metric(softmax(logits), labels)
-
-        dout = self.loss_fn.backward()
-        self.model.backward(dout)
-        self.optimizer.step()
-        return dict(loss=loss, acc=acc)
-
-    def eval_step(self, images, labels):
-        logits = self.model(images)
-        loss = self.loss_fn(logits, labels)
-        acc = self.acc_metric(softmax(logits), labels)
-        return dict(loss=loss, acc=acc)
-
-
-def train(model, dataloader):
-    results = {}
-    total = 0
-
-    with tqdm(dataloader, desc="Train", file=sys.stdout, leave=False, ascii=True) as progress_bar:
-        for images, labels in progress_bar:
-            batch_size = images.shape[0]
-            total += batch_size
-
-            outputs = model.train_step(images, labels)
-            for name, value in outputs.items():
-                results.setdefault(name, 0.0)
-                results[name] += float(value) * batch_size
-
-            progress_bar.set_postfix({name: f"{value / total:.3f}"
-                for name, value in results.items()})
-
-    return {name: value / total for name, value in results.items()}
-
-
-def evaluate(model, dataloader):
-    results = {}
-    total = 0
-
-    with tqdm(dataloader, desc="Evaluate", file=sys.stdout, leave=False, ascii=True) as progress_bar:
-        for images, labels in progress_bar:
-            batch_size = images.shape[0]
-            total += batch_size
-
-            outputs = model.eval_step(images, labels)
-            for name, value in outputs.items():
-                results.setdefault(name, 0.0)
-                results[name] += float(value) * batch_size
-
-            progress_bar.set_postfix({name: f"{value / total:.3f}"
-                for name, value in results.items()})
-
-    return {name: value / total for name, value in results.items()}
-
-
-def fit(model, train_loader, num_epochs, valid_loader=None):
-    history = {"train": {}, "valid": {}}
-    for epoch in range(1, num_epochs + 1):
-        epoch_info = f"[{epoch:3d}/{num_epochs}]"
-        train_results = train(model, train_loader)
-        train_info = ", ".join([f"{k}:{v:.3f}" for k, v in train_results.items()])
-
-        for name, value in train_results.items():
-            history["train"].setdefault(name, [])
-            history["train"][name].append(value)
-
-        if valid_loader is not None:
-            valid_results = evaluate(model, valid_loader)
-            valid_info = ", ".join([f"{k}:{v:.3f}" for k, v in valid_results.items()])
-
-            for name, value in valid_results.items():
-                history["valid"].setdefault(name, [])
-                history["valid"][name].append(value)
-            print(f"{epoch_info} {train_info} | (val) {valid_info}")
-        else:
-            print(f"{epoch_info} {train_info}")
-
-    return history
+            param[...] -= self.lr * m_hat / (np.sqrt(v_hat) + 1e-8)
 
 
 if __name__ == "__main__":
@@ -323,7 +257,7 @@ if __name__ == "__main__":
     ## Data Loading / Preprocessing
     #################################################################
 
-    data_dir = r"E:\datasets\mnist"
+    data_dir = "/mnt/d/datasets/mnist"
     x_train, y_train = get_mnist(data_dir, split="train")
     x_test, y_test = get_mnist(data_dir, split="test")
 
@@ -335,8 +269,8 @@ if __name__ == "__main__":
     x_train = x_train.astype(np.float32).reshape(-1, 28*28) / 255
     x_test = x_test.astype(np.float32).reshape(-1, 28*28) / 255
 
-    y_train = one_hot(y_train, num_classes=10).astype(np.int64)
-    y_test = one_hot(y_test, num_classes=10).astype(np.int64)
+    # y_train = one_hot(y_train, num_classes=10).astype(np.int64)
+    # y_test = one_hot(y_test, num_classes=10).astype(np.int64)
 
     print("\n>> Data after preprocessing:")
     print(f"train images: {x_train.dtype}, {x_train.shape}, [{x_train.min()}, {x_train.max()}]")
@@ -352,18 +286,60 @@ if __name__ == "__main__":
     np.random.seed(42)
     input_size, hidden_size, output_size = 28*28, 100, 10
     model = MLP(input_size, hidden_size, output_size)
-    clf = Classifier(model)
+    loss_fn = CrossEntropyWithLogits()
+    optimizer = Adam(model, lr=0.001)
 
     #################################################################
     ## Training: Propagate Forward / Bacward - Update weights / baises
     #################################################################
 
+    num_epochs = 10
+
     print("\n>> Training start ...")
-    history = fit(clf, train_loader, num_epochs=10)
+    for epoch in range(1, num_epochs + 1):
+        batch_loss = 0
+        batch_acc = 0
+        total_size = 0
+
+        for x, y in train_loader:
+            x_size = x.shape[0]
+            total_size += x_size
+
+            # Forward propagation
+            logits = model(x)
+            loss = loss_fn(logits, y)
+            acc = accuracy(softmax(logits), y)
+
+            # Backward propagation
+            dout = loss_fn.backward()
+            model.backward(dout)
+
+            # Update weights and biases
+            optimizer.step()
+
+            batch_loss += loss * x_size
+            batch_acc += acc * x_size
+
+        print(f"[{epoch:3d}/{num_epochs}] "
+              f"loss:{batch_loss/total_size:.3f} acc:{batch_acc/total_size:.3f}")
 
     #################################################################
     ## Evaluation using test data
     #################################################################
 
-    results = evaluate(clf, test_loader)
-    print(f"\n>> Evaluation: loss:{results['loss']:.3f} acc:{results['acc']:.3f}")
+    batch_loss = 0
+    batch_acc = 0
+    total_size = 0
+
+    for x, y in test_loader:
+        x_size = x.shape[0]
+        total_size += x_size
+
+        logits = model(x)
+        loss = loss_fn(logits, y)
+        acc = accuracy(softmax(logits), y)
+
+        batch_loss += loss * x_size
+        batch_acc += acc * x_size
+
+    print(f"\n>> Evaluation: loss:{batch_loss/total_size:.3f} acc:{batch_acc/total_size:.3f}")

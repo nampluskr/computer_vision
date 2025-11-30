@@ -32,6 +32,32 @@ def get_mnist(data_dir, split="train"):
     return images, labels
 
 
+class DataLoader:
+    def __init__(self, images, labels, batch_size, shuffle=False):
+        self.images = images
+        self.labels = labels
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+
+        self.num_images = len(images)
+        self.num_batches = int(np.ceil(len(images) / batch_size))
+
+    def __len__(self):
+        return self.num_batches
+
+    def __iter__(self):
+        indices = np.arange(self.num_images)
+        if self.shuffle:
+            indices = np.random.permutation(indices)
+
+        for i in range(self.num_batches):
+            start = i * self.batch_size
+            end = (i + 1) * self.batch_size
+            images = self.images[indices[start:end]]
+            labels = self.labels[indices[start:end]]
+            yield images, labels
+
+
 #################################################################
 ## Math Functions
 #################################################################
@@ -45,17 +71,27 @@ def sigmoid(x):
 
 
 def softmax(x):
+    if x.ndim == 1:
+        e_x = np.exp(x - np.max(x))
+        return e_x / np.sum(e_x)
     e_x = np.exp(x - np.max(x, axis=1, keepdims=True))
     return e_x / np.sum(e_x, axis=1, keepdims=True)
 
 
 def cross_entropy(preds, targets):
-    batch_size = preds.shape[0]
-    return -np.sum(targets*np.log(preds + 1.0E-8)) / batch_size
+    if targets.ndim == 1:
+        batch_size = preds.shape[0]
+        probs = preds[np.arange(batch_size), targets]
+    else:   # one-hot labels
+        probs = np.sum(preds * targets, axis=1)
+    return -np.mean(np.log(probs + 1e-8))
 
 
 def accuracy(preds, targets):
-    return (preds.argmax(axis=1) == targets.argmax(axis=1)).mean()
+    preds = preds.argmax(axis=1)
+    if targets.ndim == 2:
+        targets = targets.argmax(axis=1)
+    return (preds == targets).mean()
 
 
 if __name__ == "__main__":
@@ -64,7 +100,7 @@ if __name__ == "__main__":
     ## Data Loading / Preprocessing
     #################################################################
     
-    data_dir = r"E:\datasets\mnist"
+    data_dir = "/mnt/d/datasets/mnist"
     x_train, y_train = get_mnist(data_dir, split="train")
     x_test, y_test = get_mnist(data_dir, split="test")
 
@@ -82,6 +118,9 @@ if __name__ == "__main__":
     print("\n>> Data after preprocessing:")
     print(f"train images: {x_train.dtype}, {x_train.shape}, [{x_train.min()}, {x_train.max()}]")
     print(f"train labels: {y_train.dtype}, {y_train.shape}, [{y_train.min()}, {y_train.max()}]")
+    
+    train_loader = DataLoader(x_train, y_train, batch_size=64, shuffle=True)
+    test_loader = DataLoader(x_test, y_test, batch_size=64, shuffle=False)
 
     #################################################################
     ## Modeling: 3-layer MLP (input layer - hidden layer - output layer)
@@ -101,9 +140,8 @@ if __name__ == "__main__":
     ## Training: Propagate Forward / Bacward - Update weights / baises
     #################################################################
     
-    num_epochs = 20
-    learning_rate = 0.001
-    batch_size = 64
+    num_epochs = 10
+    learning_rate = 0.01
 
     print("\n>> Training start ...")
     for epoch in range(1, num_epochs + 1):
@@ -111,10 +149,7 @@ if __name__ == "__main__":
         batch_acc = 0
         total_size = 0
 
-        indices = np.random.permutation(len(x_train))
-        for i in range(0, len(x_train), batch_size):
-            x = x_train[indices[i: i + batch_size]]
-            y = y_train[indices[i: i + batch_size]]
+        for x, y in train_loader:
             x_size = x.shape[0]
             total_size += x_size
 
@@ -155,9 +190,8 @@ if __name__ == "__main__":
             batch_loss += loss * x_size
             batch_acc += acc * x_size
 
-        if epoch % 2 == 0:
-            print(f"[{epoch:3d}/{num_epochs}] "
-                  f"loss:{batch_loss/total_size:.3f} acc:{batch_acc/total_size:.3f}")
+        print(f"[{epoch:3d}/{num_epochs}] "
+              f"loss:{batch_loss/total_size:.3f} acc:{batch_acc/total_size:.3f}")
 
     #################################################################
     ## Evaluation using test data
@@ -167,9 +201,7 @@ if __name__ == "__main__":
     batch_acc = 0
     total_size = 0
 
-    for i in range(0, len(x_test), batch_size):
-        x = x_test[i: i + batch_size]
-        y = y_test[i: i + batch_size]
+    for x, y in test_loader:
         x_size = x.shape[0]
         total_size += x_size
 

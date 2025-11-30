@@ -52,8 +52,10 @@ class DataLoader:
 
         for i in range(self.num_batches):
             start = i * self.batch_size
-            end = start + self.batch_size
-            yield self.images[indices[start:end]], self.labels[indices[start:end]]
+            end = (i + 1) * self.batch_size
+            images = self.images[indices[start:end]]
+            labels = self.labels[indices[start:end]]
+            yield images, labels
 
 
 #################################################################
@@ -69,17 +71,27 @@ def sigmoid(x):
 
 
 def softmax(x):
+    if x.ndim == 1:
+        e_x = np.exp(x - np.max(x))
+        return e_x / np.sum(e_x)
     e_x = np.exp(x - np.max(x, axis=1, keepdims=True))
     return e_x / np.sum(e_x, axis=1, keepdims=True)
 
 
 def cross_entropy(preds, targets):
-    batch_size = preds.shape[0]
-    return -np.sum(targets*np.log(preds + 1.0E-8)) / batch_size
+    if targets.ndim == 1:
+        batch_size = preds.shape[0]
+        probs = preds[np.arange(batch_size), targets]
+    else:   # one-hot labels
+        probs = np.sum(preds * targets, axis=1)
+    return -np.mean(np.log(probs + 1e-8))
 
 
 def accuracy(preds, targets):
-    return (preds.argmax(axis=1) == targets.argmax(axis=1)).mean()
+    preds = preds.argmax(axis=1)
+    if targets.ndim == 2:
+        targets = targets.argmax(axis=1)
+    return (preds == targets).mean()
 
 
 #################################################################
@@ -164,13 +176,28 @@ class CrossEntropyWithLogits:
         return (self.preds - self.targets) / self.targets.shape[0]
 
 
+#################################################################
+## Optimizer
+#################################################################
+
+class SGD:
+    def __init__(self, model, lr):
+        self.params = model.params
+        self.grads = model.grads
+        self.lr = lr
+
+    def step(self):
+        for param, grad in zip(self.params, self.grads):
+            param -= self.lr * grad
+
+
 if __name__ == "__main__":
 
     #################################################################
     ## Data Loading / Preprocessing
     #################################################################
 
-    data_dir = r"E:\datasets\mnist"
+    data_dir = "/mnt/d/datasets/mnist"
     x_train, y_train = get_mnist(data_dir, split="train")
     x_test, y_test = get_mnist(data_dir, split="test")
 
@@ -200,14 +227,13 @@ if __name__ == "__main__":
     input_size, hidden_size, output_size = 28*28, 100, 10
     model = MLP(input_size, hidden_size, output_size)
     loss_fn = CrossEntropyWithLogits()
+    optimizer = SGD(model, lr=0.01)
 
     #################################################################
     ## Training: Propagate Forward / Bacward - Update weights / baises
     #################################################################
 
-    num_epochs = 20
-    learning_rate = 0.001
-    batch_size = 64
+    num_epochs = 10
 
     print("\n>> Training start ...")
     for epoch in range(1, num_epochs + 1):
@@ -227,17 +253,15 @@ if __name__ == "__main__":
             # Backward propagation
             dout = loss_fn.backward()
             model.backward(dout)
-            
+
             # Update weights and biases
-            for param, grad in zip(model.params, model.grads):
-                param -= learning_rate * grad
+            optimizer.step()
 
             batch_loss += loss * x_size
             batch_acc += acc * x_size
 
-        if epoch % 2 == 0:
-            print(f"[{epoch:3d}/{num_epochs}] "
-                  f"loss:{batch_loss/total_size:.3f} acc:{batch_acc/total_size:.3f}")
+        print(f"[{epoch:3d}/{num_epochs}] "
+              f"loss:{batch_loss/total_size:.3f} acc:{batch_acc/total_size:.3f}")
 
     #################################################################
     ## Evaluation using test data
@@ -251,9 +275,7 @@ if __name__ == "__main__":
         x_size = x.shape[0]
         total_size += x_size
 
-        # Forward propagation
         logits = model(x)
-
         loss = loss_fn(logits, y)
         acc = accuracy(softmax(logits), y)
 

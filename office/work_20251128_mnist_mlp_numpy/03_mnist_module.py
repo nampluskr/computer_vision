@@ -52,8 +52,10 @@ class DataLoader:
 
         for i in range(self.num_batches):
             start = i * self.batch_size
-            end = start + self.batch_size
-            yield self.images[indices[start:end]], self.labels[indices[start:end]]
+            end = (i + 1) * self.batch_size
+            images = self.images[indices[start:end]]
+            labels = self.labels[indices[start:end]]
+            yield images, labels
 
 
 #################################################################
@@ -69,17 +71,109 @@ def sigmoid(x):
 
 
 def softmax(x):
+    if x.ndim == 1:
+        e_x = np.exp(x - np.max(x))
+        return e_x / np.sum(e_x)
     e_x = np.exp(x - np.max(x, axis=1, keepdims=True))
     return e_x / np.sum(e_x, axis=1, keepdims=True)
 
 
 def cross_entropy(preds, targets):
-    batch_size = preds.shape[0]
-    return -np.sum(targets*np.log(preds + 1.0E-8)) / batch_size
+    if targets.ndim == 1:
+        batch_size = preds.shape[0]
+        probs = preds[np.arange(batch_size), targets]
+    else:   # one-hot labels
+        probs = np.sum(preds * targets, axis=1)
+    return -np.mean(np.log(probs + 1e-8))
 
 
 def accuracy(preds, targets):
-    return (preds.argmax(axis=1) == targets.argmax(axis=1)).mean()
+    preds = preds.argmax(axis=1)
+    if targets.ndim == 2:
+        targets = targets.argmax(axis=1)
+    return (preds == targets).mean()
+
+
+#################################################################
+## Modules
+#################################################################
+
+class Module:
+    def __init__(self):
+        self.params = []
+        self.grads = []
+
+    def __call__(self, *args):
+        return self.forward(*args)
+
+
+class Linear(Module):
+    def __init__(self, in_features, out_features):
+        super().__init__()
+        self.w = np.random.randn(in_features, out_features)
+        self.b = np.zeros(out_features)
+        self.grad_w = np.zeros_like(self.w)
+        self.grad_b = np.zeros_like(self.b)
+
+        self.params.extend([self.w, self.b])
+        self.grads.extend([self.grad_w, self.grad_b])
+        self.x = None
+
+    def forward(self, x):
+        self.x = x
+        return np.dot(x, self.w) + self.b
+
+    def backward(self, dout):
+        self.grad_w[...] = np.dot(self.x.T, dout)
+        self.grad_b[...] = np.sum(dout, axis=0)
+        return np.dot(dout, self.w.T)
+
+
+class Sigmoid(Module):
+    def forward(self, x):
+        self.out = sigmoid(x)
+        return self.out
+
+    def backward(self, dout):
+        return dout * self.out * (1 - self.out)
+
+
+class MLP(Module):
+    def __init__(self, input_size, hidden_size, output_size):
+        super().__init__()
+        self.layers = [
+            Linear(input_size, hidden_size),
+            Sigmoid(),
+            Linear(hidden_size, hidden_size),
+            Sigmoid(),
+            Linear(hidden_size, output_size),
+        ]
+        for layer in self.layers:
+            self.params.extend(layer.params)
+            self.grads.extend(layer.grads)
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+    def backward(self, dout):
+        for layer in reversed(self.layers):
+            dout = layer.backward(dout)
+        return dout
+
+
+class CrossEntropyWithLogits:
+    def __call__(self, logits, targets):
+        return self.forward(logits, targets)
+
+    def forward(self, logits, targets):
+        self.preds = softmax(logits)
+        self.targets = targets
+        return cross_entropy(self.preds, self.targets)
+
+    def backward(self):
+        return (self.preds - self.targets) / self.targets.shape[0]
 
 
 if __name__ == "__main__":
@@ -87,8 +181,8 @@ if __name__ == "__main__":
     #################################################################
     ## Data Loading / Preprocessing
     #################################################################
-    
-    data_dir = r"E:\datasets\mnist"
+
+    data_dir = "/mnt/d/datasets/mnist"
     x_train, y_train = get_mnist(data_dir, split="train")
     x_test, y_test = get_mnist(data_dir, split="test")
 
@@ -106,31 +200,25 @@ if __name__ == "__main__":
     print("\n>> Data after preprocessing:")
     print(f"train images: {x_train.dtype}, {x_train.shape}, [{x_train.min()}, {x_train.max()}]")
     print(f"train labels: {y_train.dtype}, {y_train.shape}, [{y_train.min()}, {y_train.max()}]")
-    
+
     train_loader = DataLoader(x_train, y_train, batch_size=64, shuffle=True)
     test_loader = DataLoader(x_test, y_test, batch_size=64, shuffle=False)
 
     #################################################################
     ## Modeling: 3-layer MLP (input layer - hidden layer - output layer)
     #################################################################
-    
+
     np.random.seed(42)
     input_size, hidden_size, output_size = 28*28, 100, 10
-
-    w1 = np.random.randn(input_size, hidden_size)
-    b1 = np.zeros(hidden_size)
-    w2 = np.random.randn(hidden_size, hidden_size)
-    b2 = np.zeros(hidden_size)
-    w3 = np.random.randn(hidden_size, output_size)
-    b3 = np.zeros(output_size)
+    model = MLP(input_size, hidden_size, output_size)
+    loss_fn = CrossEntropyWithLogits()
 
     #################################################################
     ## Training: Propagate Forward / Bacward - Update weights / baises
     #################################################################
-    
-    num_epochs = 20
-    learning_rate = 0.001
-    batch_size = 64
+
+    num_epochs = 10
+    learning_rate = 0.01
 
     print("\n>> Training start ...")
     for epoch in range(1, num_epochs + 1):
@@ -143,45 +231,23 @@ if __name__ == "__main__":
             total_size += x_size
 
             # Forward propagation
-            z1 = np.dot(x, w1) + b1
-            a1 = sigmoid(z1)
-            z2 = np.dot(a1, w2) + b2
-            a2 = sigmoid(z2)
-            z3 = np.dot(a2, w3) + b3
-            out = softmax(z3)
-
-            loss = cross_entropy(out, y)
-            acc = accuracy(out, y)
+            logits = model(x)
+            loss = loss_fn(logits, y)
+            acc = accuracy(softmax(logits), y)
 
             # Backward propagation
-            grad_z3 = (out - y) / y.shape[0]
-            grad_w3 = np.dot(a2.T, grad_z3)
-            grad_b3 = np.sum(grad_z3, axis=0)
-
-            grad_a2 = np.dot(grad_z3, w3.T)
-            grad_z2 = a2 * (1 - a2) * grad_a2
-            grad_w2 = np.dot(a1.T, grad_z2)
-            grad_b2 = np.sum(grad_z2, axis=0)
-
-            grad_a1 = np.dot(grad_z2, w2.T)
-            grad_z1 = a1 * (1 - a1) * grad_a1
-            grad_w1 = np.dot(x.T, grad_z1)
-            grad_b1 = np.sum(grad_z1, axis=0)
-
+            dout = loss_fn.backward()
+            model.backward(dout)
+            
             # Update weights and biases
-            w1 -= learning_rate * grad_w1
-            b1 -= learning_rate * grad_b1
-            w2 -= learning_rate * grad_w2
-            b2 -= learning_rate * grad_b2
-            w3 -= learning_rate * grad_w3
-            b3 -= learning_rate * grad_b3
+            for param, grad in zip(model.params, model.grads):
+                param -= learning_rate * grad
 
             batch_loss += loss * x_size
             batch_acc += acc * x_size
 
-        if epoch % 2 == 0:
-            print(f"[{epoch:3d}/{num_epochs}] "
-                  f"loss:{batch_loss/total_size:.3f} acc:{batch_acc/total_size:.3f}")
+        print(f"[{epoch:3d}/{num_epochs}] "
+              f"loss:{batch_loss/total_size:.3f} acc:{batch_acc/total_size:.3f}")
 
     #################################################################
     ## Evaluation using test data
@@ -196,15 +262,10 @@ if __name__ == "__main__":
         total_size += x_size
 
         # Forward propagation
-        z1 = np.dot(x, w1) + b1
-        a1 = sigmoid(z1)
-        z2 = np.dot(a1, w2) + b2
-        a2 = sigmoid(z2)
-        z3 = np.dot(a2, w3) + b3
-        out = softmax(z3)
+        logits = model(x)
 
-        loss = cross_entropy(out, y)
-        acc = accuracy(out, y)
+        loss = loss_fn(logits, y)
+        acc = accuracy(softmax(logits), y)
 
         batch_loss += loss * x_size
         batch_acc += acc * x_size
