@@ -371,19 +371,18 @@ class BatchNorm2d(Module):
         self.eps = eps
         self.momentum = momentum
 
-        self.w = np.ones(num_features)  # gamma: (C,)
-        self.b = np.zeros(num_features) # beta: (C,)
-
+        self.w = np.ones(num_features)          # gamma
+        self.b = np.zeros(num_features)         # beta
         self.grad_w = np.zeros_like(self.w)
         self.grad_b = np.zeros_like(self.b)
 
         self.params = [self.w, self.b]
-        self.grads = [self.grad_w, self.grad_b]
+        self.grads  = [self.grad_w, self.grad_b]
 
-        self.running_mean = np.zeros(num_features)
-        self.running_var = np.ones(num_features)
-
+        self.running_mean = np.zeros(num_features, dtype=np.float32)
+        self.running_var  = np.ones(num_features, dtype=np.float32)
         self.training = True
+
         self.x = None
         self.x_norm = None
         self.mean = None
@@ -393,25 +392,28 @@ class BatchNorm2d(Module):
     def forward(self, x):
         self.x = x
         B, C, H, W = x.shape
-        assert C == self.num_features, "채널 수 불일치"
+        assert C == self.num_features, \
+            f"Channel mismatch: got {C}, expected {self.num_features}"
 
         if self.training:
-            mean = x.mean(axis=(0, 2, 3), keepdims=False)  # (C,)
-            var = x.var(axis=(0, 2, 3), keepdims=False)    # (C,)
+            mean = x.mean(axis=(0, 2, 3))          # (C,)
+            var  = x.var(axis=(0, 2, 3))           # (C,)
+
             self.mean = mean
-            self.var = var
+            self.var  = var
             self.inv_std = 1.0 / np.sqrt(var + self.eps)
 
             x_centered = x - mean.reshape(1, C, 1, 1)
             x_norm = x_centered * self.inv_std.reshape(1, C, 1, 1)
 
             self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mean
-            self.running_var = (1 - self.momentum) * self.running_var + self.momentum * var
+            self.running_var  = (1 - self.momentum) * self.running_var  + self.momentum * var
         else:
-            x_norm = (x - self.running_mean.reshape(1, C, 1, 1)) / np.sqrt(self.running_var + self.eps)
+            mean_reshaped = self.running_mean.reshape(1, C, 1, 1)
+            var_reshaped  = self.running_var.reshape(1, C, 1, 1)
+            x_norm = (x - mean_reshaped) / np.sqrt(var_reshaped + self.eps)
 
         self.x_norm = x_norm
-
         out = self.w.reshape(1, C, 1, 1) * x_norm + self.b.reshape(1, C, 1, 1)
         return out
 
@@ -985,7 +987,7 @@ def fit(model, train_loader, num_epochs, valid_loader=None):
 
 if __name__ == "__main__":
 
-    if 1:
+    if 0:
         np.random.seed(42)
 
         #################################################################
@@ -1063,8 +1065,8 @@ if __name__ == "__main__":
         ## Training: Propagate Forward / Bacward - Update weights / baises
         #################################################################
 
-        print("\n>> Training start ...")
-        history = fit(clf, train_loader, num_epochs=10, valid_loader=test_loader)
+        # print("\n>> Training start ...")
+        # history = fit(clf, train_loader, num_epochs=10, valid_loader=test_loader)
 
         #################################################################
         ## Evaluation using test data
