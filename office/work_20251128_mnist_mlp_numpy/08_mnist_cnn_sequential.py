@@ -1065,8 +1065,8 @@ if __name__ == "__main__":
         ## Training: Propagate Forward / Bacward - Update weights / baises
         #################################################################
 
-        # print("\n>> Training start ...")
-        # history = fit(clf, train_loader, num_epochs=10, valid_loader=test_loader)
+        print("\n>> Training start ...")
+        history = fit(clf, train_loader, num_epochs=10, valid_loader=test_loader)
 
         #################################################################
         ## Evaluation using test data
