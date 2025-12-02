@@ -1,3 +1,6 @@
+from backend import backend, xp
+print(f"Using: {'CuPy (GPU)' if backend.use_gpu else 'NumPy (CPU)'}")
+
 import os
 import numpy as np
 import gzip
@@ -9,15 +12,17 @@ import gzip
 def load_mnist_images(data_dir, filename):
     data_path = os.path.join(data_dir, filename)
     with gzip.open(data_path, 'rb') as f:
-        data = np.frombuffer(f.read(), np.uint8, offset=16)
+        data = np.frombuffer(f.read(), xp.uint8, offset=16)
     data = data.reshape(-1, 28, 28)
-    data = np.pad(data, ((0, 0), (2, 2), (2, 2)), constant_values=0.0)
+    data = xp.asarray(data)
+    data = xp.pad(data, ((0, 0), (2, 2), (2, 2)), constant_values=0.0)
     return data
 
 def load_mnist_labels(data_dir, filename):
     data_path = os.path.join(data_dir, filename)
     with gzip.open(data_path, 'rb') as f:
-        data = np.frombuffer(f.read(), np.uint8, offset=8)
+        data = np.frombuffer(f.read(), xp.uint8, offset=8)
+    data = xp.asarray(data)
     return data
 
 
@@ -56,15 +61,15 @@ class DataLoader:
         if drop_last:
             self.num_batches = self.num_images // batch_size
         else:
-            self.num_batches = int(np.ceil(self.num_images / batch_size))
+            self.num_batches = int(xp.ceil(self.num_images / batch_size))
 
     def __len__(self):
         return self.num_batches
 
     def __iter__(self):
-        indices = np.arange(self.num_images)
+        indices = xp.arange(self.num_images)
         if self.shuffle:
-            indices = np.random.permutation(indices)
+            indices = xp.random.permutation(indices)
         if self.drop_last:
             indices = indices[:self.num_batches * self.batch_size]
 
@@ -80,47 +85,47 @@ class DataLoader:
 #################################################################
 
 def one_hot(x, num_classes):
-    return np.eye(num_classes)[x]
+    return xp.eye(num_classes)[x]
 
 
 def sigmoid(x):
-    return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
+    return xp.where(x >= 0, 1 / (1 + xp.exp(-x)), xp.exp(x) / (1 + xp.exp(x)))
 
 
 def relu(x):
-    return np.maximum(0, x)
+    return xp.maximum(0, x)
 
 
 def softmax(x):
     if x.ndim == 1:
-        e_x = np.exp(x - np.max(x))
-        return e_x / np.sum(e_x)
-    e_x = np.exp(x - np.max(x, axis=1, keepdims=True))
-    return e_x / np.sum(e_x, axis=1, keepdims=True)
+        e_x = xp.exp(x - xp.max(x))
+        return e_x / xp.sum(e_x)
+    e_x = xp.exp(x - xp.max(x, axis=1, keepdims=True))
+    return e_x / xp.sum(e_x, axis=1, keepdims=True)
 
 
 def cross_entropy(preds, targets):
     batch_size = preds.shape[0]
     if targets.ndim == 1:
-        probs = preds[np.arange(batch_size), targets]
+        probs = preds[xp.arange(batch_size), targets]
     else:   # one-hot labels
-        probs = np.sum(preds * targets, axis=1)
-    return -np.mean(np.log(probs + 1e-8))
+        probs = xp.sum(preds * targets, axis=1)
+    return -xp.mean(xp.log(probs + 1e-8))
 
 
 def log_softmax(x):
     if x.ndim == 1:
-        return x - np.max(x) - np.log(np.sum(np.exp(x - np.max(x))))
-    max_x = np.max(x, axis=1, keepdims=True)
-    return x - max_x - np.log(np.sum(np.exp(x - max_x), axis=1, keepdims=True))
+        return x - xp.max(x) - xp.log(xp.sum(xp.exp(x - xp.max(x))))
+    max_x = xp.max(x, axis=1, keepdims=True)
+    return x - max_x - xp.log(xp.sum(xp.exp(x - max_x), axis=1, keepdims=True))
 
 
 def cross_entropy_with_logits(logits, targets):
     log_probs = log_softmax(logits)
     if targets.ndim == 1:
         batch_size = logits.shape[0]
-        return -np.mean(log_probs[np.arange(batch_size), targets])
-    return -np.mean(np.sum(targets * log_probs, axis=1))
+        return -xp.mean(log_probs[xp.arange(batch_size), targets])
+    return -xp.mean(xp.sum(targets * log_probs, axis=1))
 
 
 def accuracy(preds, targets):
@@ -144,19 +149,19 @@ def binary_accuracy(preds, targets, threshold=0.5):
 def bce_with_logits(logits, targets):
     # log(sigmoid(x)) = x - softplus(x) = -max(-x, 0) - log(1 + exp(-|x|))
     # log(1 - sigmoid(x)) = -softplus(x) = -max(x, 0) - log(1 + exp(-|x|))
-    max_val = np.maximum(-logits, 0)
-    loss = max_val + np.log(np.exp(-max_val) + np.exp(-logits - max_val))
-    return np.mean(targets * loss + (1 - targets) * (logits + loss))
+    max_val = xp.maximum(-logits, 0)
+    loss = max_val + xp.log(xp.exp(-max_val) + xp.exp(-logits - max_val))
+    return xp.mean(targets * loss + (1 - targets) * (logits + loss))
 
 
 def im2col(images, kernel_size, stride, padding):
     if padding > 0:
-        images = np.pad(images, ((0, 0), (0, 0), (padding, padding), (padding, padding)), mode='constant')
+        images = xp.pad(images, ((0, 0), (0, 0), (padding, padding), (padding, padding)), mode='constant')
     B, C, H, W = images.shape
     K = kernel_size
     out_h = (H - K) // stride + 1
     out_w = (W - K) // stride + 1
-    cols = np.zeros((B, C, K, K, out_h, out_w))
+    cols = xp.zeros((B, C, K, K, out_h, out_w))
 
     for y in range(K):
         y_max = y + stride * out_h
@@ -171,9 +176,9 @@ def col2im(cols, images_shape, kernel_size, stride, padding):
     B, C, H, W = images_shape
     if padding > 0:
         H_pad, W_pad = H + 2 * padding, W + 2 * padding
-        images = np.zeros((B, C, H_pad, W_pad))
+        images = xp.zeros((B, C, H_pad, W_pad))
     else:
-        images = np.zeros((B, C, H, W))
+        images = xp.zeros((B, C, H, W))
         H_pad, W_pad = H, W
 
     K = kernel_size
@@ -224,16 +229,16 @@ class Linear(Module):
     def __init__(self, in_features, out_features, init='he'):
         super().__init__()
         if init == 'xavier':    # sigmoid, tanh
-            scale = np.sqrt(2.0 / (in_features + out_features))
+            scale = xp.sqrt(2.0 / (in_features + out_features))
         elif init == 'he':      # relu, leakyrelu
-            scale = np.sqrt(2.0 / in_features)
+            scale = xp.sqrt(2.0 / in_features)
         else:
             scale = 1.0
 
-        self.w = np.random.randn(in_features, out_features) * scale
-        self.b = np.zeros(out_features)
-        self.grad_w = np.zeros_like(self.w)
-        self.grad_b = np.zeros_like(self.b)
+        self.w = xp.random.randn(in_features, out_features) * scale
+        self.b = xp.zeros(out_features)
+        self.grad_w = xp.zeros_like(self.w)
+        self.grad_b = xp.zeros_like(self.b)
 
         self.params.extend([self.w, self.b])
         self.grads.extend([self.grad_w, self.grad_b])
@@ -241,12 +246,12 @@ class Linear(Module):
 
     def forward(self, x):
         self.x = x
-        return np.dot(x, self.w) + self.b
+        return xp.dot(x, self.w) + self.b
 
     def backward(self, dout):
-        self.grad_w[...] = np.dot(self.x.T, dout)
-        self.grad_b[...] = np.sum(dout, axis=0)
-        return np.dot(dout, self.w.T)
+        self.grad_w[...] = xp.dot(self.x.T, dout)
+        self.grad_b[...] = xp.sum(dout, axis=0)
+        return xp.dot(dout, self.w.T)
 
 
 class Conv2d(Module):
@@ -259,17 +264,17 @@ class Conv2d(Module):
         self.padding = padding
 
         if init == 'xavier':
-            scale = np.sqrt(1.0 / (in_channels * kernel_size * kernel_size))
+            scale = xp.sqrt(1.0 / (in_channels * kernel_size * kernel_size))
         elif init == 'he':
-            scale = np.sqrt(2.0 / in_channels)
+            scale = xp.sqrt(2.0 / in_channels)
         else:
             scale = 1.0
 
-        self.w = np.random.randn(out_channels, in_channels, kernel_size, kernel_size) * scale
-        self.b = np.zeros(out_channels)
+        self.w = xp.random.randn(out_channels, in_channels, kernel_size, kernel_size) * scale
+        self.b = xp.zeros(out_channels)
 
-        self.grad_w = np.zeros_like(self.w)
-        self.grad_b = np.zeros_like(self.b)
+        self.grad_w = xp.zeros_like(self.w)
+        self.grad_b = xp.zeros_like(self.b)
 
         self.params = [self.w, self.b]
         self.grads = [self.grad_w, self.grad_b]
@@ -286,7 +291,7 @@ class Conv2d(Module):
         self.col_cache = (col_x, out_h, out_w)
         self.col_w = self.w.reshape(self.out_channels, -1)  # (out_c, in_c * K * K)
 
-        out = np.dot(col_x, self.col_w.T) + self.b          # (B*out_h*out_w, out_c)
+        out = xp.dot(col_x, self.col_w.T) + self.b          # (B*out_h*out_w, out_c)
         out = out.reshape(B, out_h, out_w, self.out_channels).transpose(0, 3, 1, 2)
         return out
 
@@ -295,12 +300,12 @@ class Conv2d(Module):
         col_x, out_h_cache, out_w_cache = self.col_cache
 
         dout_flat = dout.transpose(0, 2, 3, 1).reshape(-1, self.out_channels)
-        self.grad_b[...] = np.sum(dout_flat, axis=0)
+        self.grad_b[...] = xp.sum(dout_flat, axis=0)
 
-        grad_w_flat = np.dot(dout_flat.T, col_x)                    # (out_c, in_c*K*K)
+        grad_w_flat = xp.dot(dout_flat.T, col_x)                    # (out_c, in_c*K*K)
         self.grad_w[...] = grad_w_flat.reshape(self.grad_w.shape)   # (out_c, in_c, K, K)
 
-        dcol_x = np.dot(dout_flat, self.col_w)                      # (B*out_h*out_w, in_c*K*K)
+        dcol_x = xp.dot(dout_flat, self.col_w)                      # (B*out_h*out_w, in_c*K*K)
         dx = col2im(dcol_x, self.x.shape, self.kernel_size, self.stride, self.padding)
         return dx
 
@@ -333,15 +338,15 @@ class LeakyReLU(Module):
 
     def forward(self, x):
         self.x = x
-        return np.where(x > 0, x, self.alpha * x)
+        return xp.where(x > 0, x, self.alpha * x)
 
     def backward(self, dout):
-        return dout * np.where(self.x > 0, 1, self.alpha)
+        return dout * xp.where(self.x > 0, 1, self.alpha)
 
 
 class Tanh(Module):
     def forward(self, x):
-        self.out = np.tanh(x)
+        self.out = xp.tanh(x)
         return self.out
 
     def backward(self, dout):
@@ -356,7 +361,7 @@ class Dropout(Module):
 
     def forward(self, x):
         if self.training:
-            self.mask = (np.random.rand(*x.shape) > self.p) / (1 - self.p)
+            self.mask = (xp.random.rand(*x.shape) > self.p) / (1 - self.p)
             return x * self.mask
         return x
 
@@ -371,16 +376,16 @@ class BatchNorm2d(Module):
         self.eps = eps
         self.momentum = momentum
 
-        self.w = np.ones(num_features)          # gamma
-        self.b = np.zeros(num_features)         # beta
-        self.grad_w = np.zeros_like(self.w)
-        self.grad_b = np.zeros_like(self.b)
+        self.w = xp.ones(num_features)          # gamma
+        self.b = xp.zeros(num_features)         # beta
+        self.grad_w = xp.zeros_like(self.w)
+        self.grad_b = xp.zeros_like(self.b)
 
         self.params = [self.w, self.b]
         self.grads  = [self.grad_w, self.grad_b]
 
-        self.running_mean = np.zeros(num_features, dtype=np.float32)
-        self.running_var  = np.ones(num_features, dtype=np.float32)
+        self.running_mean = xp.zeros(num_features, dtype=xp.float32)
+        self.running_var  = xp.ones(num_features, dtype=xp.float32)
         self.training = True
 
         self.x = None
@@ -401,7 +406,7 @@ class BatchNorm2d(Module):
 
             self.mean = mean
             self.var  = var
-            self.inv_std = 1.0 / np.sqrt(var + self.eps)
+            self.inv_std = 1.0 / xp.sqrt(var + self.eps)
 
             x_centered = x - mean.reshape(1, C, 1, 1)
             x_norm = x_centered * self.inv_std.reshape(1, C, 1, 1)
@@ -411,7 +416,7 @@ class BatchNorm2d(Module):
         else:
             mean_reshaped = self.running_mean.reshape(1, C, 1, 1)
             var_reshaped  = self.running_var.reshape(1, C, 1, 1)
-            x_norm = (x - mean_reshaped) / np.sqrt(var_reshaped + self.eps)
+            x_norm = (x - mean_reshaped) / xp.sqrt(var_reshaped + self.eps)
 
         self.x_norm = x_norm
         out = self.w.reshape(1, C, 1, 1) * x_norm + self.b.reshape(1, C, 1, 1)
@@ -426,10 +431,10 @@ class BatchNorm2d(Module):
         self.grad_w[...] = dgamma
 
         dx_norm = dout * self.w.reshape(1, C, 1, 1)
-        dvar = -0.5 * np.sum(dx_norm * (self.x - self.mean.reshape(1, C, 1, 1)),
+        dvar = -0.5 * xp.sum(dx_norm * (self.x - self.mean.reshape(1, C, 1, 1)),
                              axis=(0, 2, 3)) * self.inv_std**3
-        dmean = -np.sum(dx_norm, axis=(0, 2, 3)) * self.inv_std - \
-                dvar * 2 * np.mean(self.x - self.mean.reshape(1, C, 1, 1), axis=(0, 2, 3))
+        dmean = -xp.sum(dx_norm, axis=(0, 2, 3)) * self.inv_std - \
+                dvar * 2 * xp.mean(self.x - self.mean.reshape(1, C, 1, 1), axis=(0, 2, 3))
 
         dx = dx_norm * self.inv_std.reshape(1, C, 1, 1)
         dx += dvar.reshape(1, C, 1, 1) * (self.x - self.mean.reshape(1, C, 1, 1)) / (B * H * W)
@@ -559,71 +564,83 @@ class MaxPool2d(Module):
         self.padding = padding
 
         self.x = None
-        self.max_indices = None
+        self.col = None
+        self.max_idx = None
+        self.out_shape = None
 
     def forward(self, x):
         self.x = x
         B, C, H, W = x.shape
-        KH, KW = self.kernel_size, self.kernel_size
-        PH, PW = self.padding, self.padding
-        SH, SW = self.stride, self.stride
+        K = self.kernel_size
+        S = self.stride
+        P = self.padding
 
-        if PH > 0 or PW > 0:
-            x = np.pad(x, ((0, 0), (0, 0), (PH, PH), (PW, PW)), mode='constant')
+        # 1. Padding
+        if P > 0:
+            x = xp.pad(x, ((0, 0), (0, 0), (P, P), (P, P)), mode='constant')
 
-        H_padded, W_padded = x.shape[2], x.shape[3]
-        out_h = (H_padded - KH) // SH + 1
-        out_w = (W_padded - KW) // SW + 1
+        H_p, W_p = x.shape[2], x.shape[3]
 
-        out = np.zeros((B, C, out_h, out_w))
-        self.max_indices = np.zeros((B, C, out_h, out_w), dtype=np.int64)
+        # Output size
+        out_h = (H_p - K) // S + 1
+        out_w = (W_p - K) // S + 1
+        self.out_shape = (B, C, out_h, out_w)
 
-        for b in range(B):
-            for c in range(C):
-                for i in range(out_h):
-                    for j in range(out_w):
-                        h_start = i * SH
-                        h_end = h_start + KH
-                        w_start = j * SW
-                        w_end = w_start + KW
-                        window = x[b, c, h_start:h_end, w_start:w_end]
+        # 2. im2col 방식으로 window 추출 (벡터화)
+        col = xp.zeros((B, C, K, K, out_h, out_w))
+        for i in range(K):
+            i_end = i + S * out_h
+            for j in range(K):
+                j_end = j + S * out_w
+                col[:, :, i, j, :, :] = x[:, :, i:i_end:S, j:j_end:S]
 
-                        max_idx_1d = np.argmax(window)
-                        max_val = window.flat[max_idx_1d]
-                        out[b, c, i, j] = max_val
-                        self.max_indices[b, c, i, j] = max_idx_1d
+        # 3. Flatten kernel dims
+        col_flat = col.reshape(B, C, K*K, out_h, out_w)
+
+        # 4. Max pooling
+        max_idx = xp.argmax(col_flat, axis=2)      # (B, C, oh, ow)
+        out = xp.max(col_flat, axis=2)
+
+        # Save for backward
+        self.col = col_flat
+        self.max_idx = max_idx
 
         return out
 
     def backward(self, dout):
-        B, C, out_h, out_w = dout.shape
-        KH, KW = self.kernel_size, self.kernel_size
-        SH, SW = self.stride, self.stride
-        PH, PW = self.padding, self.padding
+        B, C, out_h, out_w = self.out_shape
+        K = self.kernel_size
+        S = self.stride
+        P = self.padding
 
-        dx = np.zeros_like(self.x)
+        # 1. dx 초기화 (padding 포함)
+        H_p = self.x.shape[2] + 2 * P if P > 0 else self.x.shape[2]
+        W_p = self.x.shape[3] + 2 * P if P > 0 else self.x.shape[3]
+        dx = xp.zeros((B, C, H_p, W_p), dtype=dout.dtype)
 
-        for b in range(B):
-            for c in range(C):
-                for i in range(out_h):
-                    for j in range(out_w):
-                        h_start = i * SH
-                        h_end = h_start + KH
-                        w_start = j * SW
-                        w_end = w_start + KW
+        # 2. max_idx (B, C, oh, ow) -> (kh, kw) 분해
+        max_idx = self.max_idx  # shape (B, C, oh, ow)
+        kh = max_idx // K
+        kw = max_idx % K
 
-                        max_idx_1d = self.max_indices[b, c, i, j]
-                        local_h = max_idx_1d // KW
-                        local_w = max_idx_1d % KW
-                        global_h = h_start + local_h
-                        global_w = w_start + local_w
+        # 3. output grid 만들기
+        oh_idx = xp.arange(out_h).reshape(1, 1, out_h, 1)
+        ow_idx = xp.arange(out_w).reshape(1, 1, 1, out_w)
 
-                        dx[b, c, global_h, global_w] += dout[b, c, i, j]
+        # 4. 입력 위치 계산
+        h_pos = kh + oh_idx * S   # shape (B,C,oh,ow)
+        w_pos = kw + ow_idx * S
 
-        if PH > 0:
-            dx = dx[:, :, PH:-PH, :]
-        if PW > 0:
-            dx = dx[:, :, :, PW:-PW]
+        # 5. batch/channels grid
+        b_idx = xp.arange(B).reshape(B, 1, 1, 1)
+        c_idx = xp.arange(C).reshape(1, C, 1, 1)
+
+        # 6. scatter add (벡터화)
+        dx[b_idx, c_idx, h_pos, w_pos] += dout
+
+        # 7. padding 제거
+        if P > 0:
+            dx = dx[:, :, P:-P, P:-P]
 
         return dx
 
@@ -635,6 +652,7 @@ class MaxPool2d(Module):
 
     def zero_grad(self):
         pass
+
 
 
 class Flatten(Module):
@@ -762,7 +780,7 @@ class CrossEntropyWithLogits(Metric):
         batch_size = self.preds.shape[0]
         if self.targets.ndim == 1:
             grad = self.preds.copy()
-            grad[np.arange(batch_size), self.targets] -= 1
+            grad[xp.arange(batch_size), self.targets] -= 1
             return grad / batch_size
         else:  # one-hot labels
             return (self.preds - self.targets) / batch_size
@@ -813,7 +831,7 @@ class Momentum(Optimizer):
     def __init__(self, model, lr, momentum=0.9):
         super().__init__(model, lr)
         self.momentum = momentum
-        self.velocities = [np.zeros_like(param) for param in self.params]
+        self.velocities = [xp.zeros_like(param) for param in self.params]
 
     def step(self):
         for param, grad, velocity in zip(self.params, self.grads, self.velocities):
@@ -826,12 +844,12 @@ class RMSprop(Optimizer):
         super().__init__(model, lr)
         self.alpha = alpha
         self.eps = eps
-        self.square_avg = [np.zeros_like(param) for param in self.params]
+        self.square_avg = [xp.zeros_like(param) for param in self.params]
 
     def step(self):
         for param, grad, square_avg in zip(self.params, self.grads, self.square_avg):
             square_avg[...] = self.alpha * square_avg + (1 - self.alpha) * (grad ** 2)
-            param[...] -= self.lr * grad / (np.sqrt(square_avg) + self.eps)
+            param[...] -= self.lr * grad / (xp.sqrt(square_avg) + self.eps)
 
 
 class Adam(Optimizer):
@@ -840,8 +858,8 @@ class Adam(Optimizer):
         self.beta1 = beta1
         self.beta2 = beta2
         self.iter = 0
-        self.ms = [np.zeros_like(param) for param in self.params]
-        self.vs = [np.zeros_like(param) for param in self.params]
+        self.ms = [xp.zeros_like(param) for param in self.params]
+        self.vs = [xp.zeros_like(param) for param in self.params]
 
     def step(self):
         self.iter += 1
@@ -852,7 +870,7 @@ class Adam(Optimizer):
             m_hat = m / (1.0 - self.beta1 ** self.iter)
             v_hat = v / (1.0 - self.beta2 ** self.iter)
 
-            param[...] -= self.lr * m_hat / (np.sqrt(v_hat) + 1e-8)
+            param[...] -= self.lr * m_hat / (xp.sqrt(v_hat) + 1e-8)
 
 
 class AdamW(Optimizer):
@@ -862,8 +880,8 @@ class AdamW(Optimizer):
         self.beta2 = beta2
         self.weight_decay = weight_decay
         self.iter = 0
-        self.ms = [np.zeros_like(param) for param in self.params]
-        self.vs = [np.zeros_like(param) for param in self.params]
+        self.ms = [xp.zeros_like(param) for param in self.params]
+        self.vs = [xp.zeros_like(param) for param in self.params]
 
     def step(self):
         self.iter += 1
@@ -876,7 +894,7 @@ class AdamW(Optimizer):
             m_hat = m / (1.0 - self.beta1 ** self.iter)
             v_hat = v / (1.0 - self.beta2 ** self.iter)
 
-            param[...] -= self.lr * m_hat / (np.sqrt(v_hat) + 1e-8)
+            param[...] -= self.lr * m_hat / (xp.sqrt(v_hat) + 1e-8)
 
 
 #################################################################
@@ -988,14 +1006,14 @@ def fit(model, train_loader, num_epochs, valid_loader=None):
 if __name__ == "__main__":
 
     if 1:
-        np.random.seed(42)
+        xp.random.seed(42)
 
         #################################################################
         ## Data Loading / Preprocessing
         #################################################################
 
         def preprocess(images, labels):
-            images = images.astype(np.float32).reshape(-1, 32*32) / 255.0
+            images = images.astype(xp.float32).reshape(-1, 32*32) / 255.0
             return images, labels
 
         data_dir = "/mnt/d/datasets/mnist"
@@ -1030,16 +1048,16 @@ if __name__ == "__main__":
         print(f"\n>> Evaluation: loss:{results['loss']:.3f} acc:{results['acc']:.3f}")
 
     if 1:
-        np.random.seed(42)
+        xp.random.seed(42)
 
         #################################################################
         ## Data Loading / Preprocessing
         #################################################################
 
         def preprocess(images, labels):
-            images = images.astype(np.float32) / 255.0
-            images = np.expand_dims(images, axis=1)
-            # images = np.tile(images, (1, 3, 1, 1))
+            images = images.astype(xp.float32) / 255.0
+            images = xp.expand_dims(images, axis=1)
+            # images = xp.tile(images, (1, 3, 1, 1))
             return images, labels
 
         data_dir = "/mnt/d/datasets/mnist"

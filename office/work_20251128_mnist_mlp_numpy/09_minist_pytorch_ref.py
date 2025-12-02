@@ -225,7 +225,7 @@ if __name__ == "__main__":
 
         ## Data Loading
         transform = T.ToTensor()    # float32, [0, 1]
-        data_dir = "/home/namu/myspace/NAMU/datasets/mnist"
+        data_dir = "/mnt/d/datasets/mnist"
         train_dataset = MNIST(data_dir, split="train", transform=transform)
         test_dataset = MNIST(data_dir, split="test", transform=transform)
 
@@ -250,7 +250,7 @@ if __name__ == "__main__":
 
         ## Data Loading
         transform = T.ToTensor()    # float32, [0, 1]
-        data_dir = "/home/namu/myspace/NAMU/datasets/mnist"
+        data_dir = "/mnt/d/datasets/mnist"
         train_dataset = MNIST(data_dir, split="train", transform=transform)
         test_dataset = MNIST(data_dir, split="test", transform=transform)
 
