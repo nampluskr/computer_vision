@@ -15,13 +15,13 @@
 조건부 GAN에서 판별기의 출력은 **real/fake** 를 나타내는 스칼라 **D(x, y)** 로 정의됩니다.  
 Projection Discriminator는 다음과 같이 구성됩니다.
 
-\[
+$$
 \boxed{
 D(x, y) = \underbrace{c^\top f(x)}_{\text{이미지 스코어}} 
           + \underbrace{e(y)^\top f(x)}_{\text{라벨‑이미지 투영}} 
           + b(y)
 }
-\]
+$$
 
 | 기호 | 의미 |
 |------|------|
@@ -43,15 +43,15 @@ D(x, y) = \underbrace{c^\top f(x)}_{\text{이미지 스코어}}
 보통 **시그모이드 BCE** 혹은 **Wasserstein** 손실을 사용합니다.
 
 - **시그모이드 BCE**  
-  \[
+  $$
   \mathcal{L}_D = -\mathbb{E}_{x\sim p_{\text{real}}}\big[\log\sigma(D(x,y))\big]
                 -\mathbb{E}_{\tilde{x}\sim G(z,y)}\big[\log(1-\sigma(D(\tilde{x},y)))\big]
-  \]
+  $$
 
 - **Wasserstein** (Spectral Normalization 적용 시)  
-  \[
+  $$
   \mathcal{L}_D = -\mathbb{E}_{x\sim p_{\text{real}}}[D(x,y)] + \mathbb{E}_{\tilde{x}\sim G(z,y)}[D(\tilde{x},y)] + \lambda\cdot\text{GP}
-  \]
+  $$
 
 ---
 
@@ -222,9 +222,9 @@ cond_vec = torch.cat([attr_vec, class_emb], dim=1)   # (B, 2*embed_dim)
 ## 7️⃣ 요약  
 
 1. **Projection Discriminator**는  
-   \[
+   $$
    D(x,y)=c^\top f(x)+e(y)^\top f(x)+b(y)
-   \]  
+   $$  
    형태로 라벨과 이미지 특징을 **점곱**해 결합한다.  
 
 2. **장점**  
