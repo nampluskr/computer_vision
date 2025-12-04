@@ -15,13 +15,11 @@
 조건부 GAN에서 판별기의 출력은 **real/fake** 를 나타내는 스칼라 **D(x, y)** 로 정의됩니다.  
 Projection Discriminator는 다음과 같이 구성됩니다.
 
-$$
-\boxed{
+$$\boxed{
 D(x, y) = \underbrace{c^\top f(x)}_{\text{이미지 스코어}} 
           + \underbrace{e(y)^\top f(x)}_{\text{라벨‑이미지 투영}} 
           + b(y)
-}
-$$
+}$$
 
 | 기호 | 의미 |
 |------|------|
