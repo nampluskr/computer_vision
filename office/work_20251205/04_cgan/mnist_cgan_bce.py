@@ -16,11 +16,11 @@ import torchvision.transforms as T
 
 from datasets import MNIST, get_train_loader
 from utils import set_seed, create_images, sample_latent, update_history, plot_images
-from generator import CGenerator32
-from discriminator import CDiscriminator32
-from generator import Generator32
-from discriminator import Discriminator32
-from cgan import CGAN, CGenerator, CDiscriminator
+# from generator import CGenerator32
+# from discriminator import CDiscriminator32
+# from generator import Generator32
+# from discriminator import Discriminator32
+from cgan import CGAN, CGenerator32, CDiscriminator32
 from trainer import fit
 
 
@@ -43,11 +43,9 @@ if __name__ == "__main__":
     EMBEDDING_DIM = 64
     EMBEDDING_CHANNELS = 64
 
-    generator = CGenerator32(
-        generagor=Generator32(latent_dim=LATENT_DIM + EMBEDDING_DIM, out_channels=OUT_CHANNELS, base=BASE), 
+    generator = CGenerator32(latent_dim=LATENT_DIM, out_channels=OUT_CHANNELS, base=BASE, 
         num_classes=NUM_CLASSES, embedding_dim=EMBEDDING_DIM)
-    discriminator = CDiscriminator(
-        Discriminator32(in_channels=IN_CHANNELS + EMBEDDING_CHANNELS, base=BASE),
+    discriminator = CDiscriminator32(in_channels=IN_CHANNELS, base=BASE,
         num_classes=NUM_CLASSES, embedding_channels=EMBEDDING_CHANNELS)
     gan = CGAN(discriminator, generator, loss_type="bce")
 
@@ -59,14 +57,17 @@ if __name__ == "__main__":
     OUTPUT_DIR = f"./outputs_{FILENAME}"
     IMAGE_NAME = FILENAME + ""
 
-    noises = np.random.normal((NUM_SAMPLES, LATENT_DIM))
+    import numpy as np
+    
+    noises = sample_latent(NUM_SAMPLES, LATENT_DIM)
+    labels = np.tile(np.arange(NUM_CLASSES), 10)
     history = {}
     epoch = 0
     for _ in range(TOTAL_EPOCHS // NUM_EPOCHS):
         epoch_history = fit(gan, train_loader, num_epochs=NUM_EPOCHS, total_epochs=TOTAL_EPOCHS)
         update_history(history, epoch_history)
 
-        images = create_images(gan.generator, noises)
+        images = create_images(gan.generator, noises, labels=labels)
         epoch += NUM_EPOCHS
         image_path = os.path.join(OUTPUT_DIR, f"{IMAGE_NAME}_epoch{epoch:03d}.png")
         plot_images(*images, ncols=10, xunit=1, yunit=1, save_path=image_path)
