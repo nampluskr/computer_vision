@@ -25,12 +25,13 @@ from trainer import fit
 if __name__ == "__main__":
 
     SEED = 42
-    DATA_DIR = "/home/namu/myspace/NAMU/datasets/celeba"
+    DATA_DIR = "/mnt/d/datasets/celeba"
     BATCH_SIZE = 64
 
     set_seed(SEED)
     transform = T.Compose([T.Resize((64, 64)), T.ToTensor(), T.Normalize(mean=[0.5]*3, std=[0.5]*3)])
     dataset = CelebA(root_dir=DATA_DIR, split="train", transform=transform, attributes=["Male", "Smiling"])
+    dataset = dataset.filter(Male=0, Smiling=1)
     train_loader = get_train_loader(dataset, batch_size=BATCH_SIZE)
 
     LATENT_DIM = 100
@@ -61,6 +62,5 @@ if __name__ == "__main__":
         epoch += NUM_EPOCHS
         image_path = os.path.join(OUTPUT_DIR, f"{IMAGE_NAME}_epoch{epoch:03d}.png")
         plot_images(*images, ncols=10, xunit=1, yunit=1, save_path=image_path)
-
 
 

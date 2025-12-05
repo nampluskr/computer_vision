@@ -13,7 +13,6 @@ for path in [common_dir, model_dir]:
 import torch
 import torchvision.transforms as T
 
-
 from datasets import MNIST, get_train_loader
 from utils import set_seed, create_images, sample_latent, update_history, plot_images
 from generator import Generator32
@@ -25,7 +24,7 @@ from trainer import fit
 if __name__ == "__main__":
 
     SEED = 42
-    DATA_DIR = "/home/namu/myspace/NAMU/datasets/mnist"
+    DATA_DIR = "/mnt/d/datasets/mnist"
     BATCH_SIZE = 128
 
     set_seed(SEED)

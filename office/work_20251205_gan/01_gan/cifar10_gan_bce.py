@@ -25,7 +25,7 @@ from trainer import fit
 if __name__ == "__main__":
 
     SEED = 42
-    DATA_DIR = "/home/namu/myspace/NAMU/datasets/cifar10"
+    DATA_DIR = "/mnt/d/datasets/cifar10"
     BATCH_SIZE = 128
 
     set_seed(SEED)

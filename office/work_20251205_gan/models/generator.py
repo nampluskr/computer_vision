@@ -80,6 +80,7 @@ class Generator64(nn.Module):
             nn.init.zeros_(m.bias)
 
     def forward(self, z):
+        z = z.view(-1, self.latent_dim, 1, 1)
         x = self.initial(z)
         x = self.blocks(x)
         x = self.final(x)
