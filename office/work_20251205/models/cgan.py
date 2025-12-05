@@ -1,158 +1,73 @@
+import sys
+import os
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+common_dir = os.path.join(os.path.dirname(current_dir), 'common')
+model_dir = os.path.join(os.path.dirname(current_dir), 'models')
+
+for path in [common_dir, model_dir]:
+    if path not in sys.path:
+        sys.path.append(path)
+
+#####################################################################
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-
-from gan import GAN
+import torchvision.transforms as T
 
 
-# class CGenerator(nn.Module):
-#     def __init__(self, generator, num_classes=10, embedding_dim=64):
-#         super().__init__()
-#         self.generator = generator
-#         self.num_classes = num_classes
-#         self.embedding_dim = embedding_dim
-#         self.labels_embedding = nn.Sequential(
-#             nn.Embedding(num_classes, embedding_dim),
-#             nn.Unflatten(dim=1, unflattened_size=(embedding_dim, 1, 1))
-#         )
-
-#     def forward(self, noises, labels):
-#         labels = self.labels_embedding(labels)
-#         z = torch.cat([noises, labels], dim=1)
-#         return self.generator(z)
+from datasets import MNIST, get_train_loader
+from utils import set_seed, create_images, sample_latent, update_history, plot_images
+# from generator import CGenerator32
+# from discriminator import CDiscriminator32
+# from generator import Generator32
+# from discriminator import Discriminator32
+from cgan import CGAN, CGenerator32, CDiscriminator32
+from trainer import fit
 
 
-# class CDiscriminator(nn.Module):
-#     def __init__(self, discriminator, num_classes=10, embedding_channels=64):
-#         super().__init__()
-#         self.discriminator = discriminator
-#         self.num_classes = num_classes
-#         self.embedding_channels = embedding_channels
-#         self.labels_embedding = nn.Embedding(num_classes, embedding_channels)
+if __name__ == "__main__":
 
-#     def forward(self, images, labels):
-#         h, w = images.size(-2), images.size(-1)
-#         labels = self.labels_embedding(labels)
-#         labels = labels.view(-1, self.embedding_channels, 1, 1).expand(-1, -1, h, w)
-#         x = torch.cat([images, labels], dim=1)
-#         return self.discriminator(x)
+    SEED = 42
+    DATA_DIR = "/home/namu/myspace/NAMU/datasets/mnist"
+    BATCH_SIZE = 128
 
+    set_seed(SEED)
+    transform = T.Compose([T.ToTensor(), T.Normalize(mean=[0.5], std=[0.5])])
+    dataset = MNIST(root_dir=DATA_DIR, split="train", transform=transform)
+    train_loader = get_train_loader(dataset, batch_size=BATCH_SIZE)
 
-class CGenerator32(nn.Module):
-    def __init__(self, latent_dim=100, out_channels=3, base=64, num_classes=10, embedding_dim=64):
-        super().__init__()
-        self.latent_dim = latent_dim
-        self.embedding_dim = embedding_dim
-        self.labels_embedding = nn.Sequential(
-            nn.Embedding(num_classes, embedding_dim),
-            nn.Unflatten(dim=1, unflattened_size=(embedding_dim, 1, 1))
-        )
-        self.initial = nn.Sequential(
-            nn.ConvTranspose2d(latent_dim + embedding_dim, base*4, kernel_size=4, stride=1, padding=0, bias=False),
-            nn.BatchNorm2d(base*4),
-            nn.ReLU(True),
-        )
-        self.blocks = nn.Sequential(
-            DeconvBlock(base*4, base*2),
-            DeconvBlock(base*2, base),
-        )
-        self.final = nn.Sequential(
-            nn.ConvTranspose2d(base, out_channels, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.Tanh(),
-        )
-        self.apply(self.init_weights)
+    LATENT_DIM = 100
+    IN_CHANNELS = 1
+    OUT_CHANNELS = 1
+    BASE = 64
+    NUM_CLASSES = 10
+    EMBEDDING_DIM = 64
+    EMBEDDING_CHANNELS = 64
 
-    def init_weights(self, m):
-        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-            nn.init.normal_(m.weight, 0.0, 0.02)
-            if m.bias is not None:
-                nn.init.zeros_(m.bias)
-        elif isinstance(m, nn.BatchNorm2d):
-            nn.init.ones_(m.weight)
-            nn.init.zeros_(m.bias)
+    generator = CGenerator32(latent_dim=LATENT_DIM, out_channels=OUT_CHANNELS, base=BASE, 
+        num_classes=NUM_CLASSES, embedding_dim=EMBEDDING_DIM)
+    discriminator = CDiscriminator32(in_channels=IN_CHANNELS, base=BASE,
+        num_classes=NUM_CLASSES, embedding_channels=EMBEDDING_CHANNELS)
+    gan = CGAN(discriminator, generator, loss_type="bce")
 
-    def forward(self, noises, labels):
-        noises = noises.view(-1, self.latent_dim, 1, 1)
-        labels = self.labels_embedding(labels)
-        z = torch.cat([noises, labels], dim=1)
-        x = self.initial(z)
-        x = self.blocks(x)
-        x = self.final(x)
-        return x
+    NUM_EPOCHS = 2
+    TOTAL_EPOCHS = 10
+    NUM_SAMPLES = 100
+
+    FILENAME = os.path.splitext(os.path.basename(__file__))[0]
+    OUTPUT_DIR = f"./outputs_{FILENAME}"
+    IMAGE_NAME = FILENAME + ""
+
+    noises = sample_latent(NUM_SAMPLES, LATENT_DIM)
+    history = {}
+    epoch = 0
+    for _ in range(TOTAL_EPOCHS // NUM_EPOCHS):
+        epoch_history = fit(gan, train_loader, num_epochs=NUM_EPOCHS, total_epochs=TOTAL_EPOCHS)
+        update_history(history, epoch_history)
+
+        images = create_images(gan.generator, noises)
+        epoch += NUM_EPOCHS
+        image_path = os.path.join(OUTPUT_DIR, f"{IMAGE_NAME}_epoch{epoch:03d}.png")
+        plot_images(*images, ncols=10, xunit=1, yunit=1, save_path=image_path)
 
 
-class CDiscriminator32(nn.Module):
-    def __init__(self, in_channels=3, base=64, num_classes=10, embedding_channels=1):
-        super().__init__()
-        self.num_classes = num_classes
-        self.embedding_channels = embedding_channels
-        self.labels_embedding = nn.Embedding(num_classes, embedding_channels)
 
-        self.initial = nn.Sequential(
-            nn.Conv2d(in_channels + embedding_channels, base, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.LeakyReLU(0.2, inplace=True),
-        )
-        self.blocks = nn.Sequential(
-            ConvBlock(base, base*2),
-            ConvBlock(base*2, base*4),
-        )
-        self.final = nn.Conv2d(base*4, 1, kernel_size=4, stride=1, padding=0, bias=False)
-
-        self.apply(self.init_weights)
-
-    def init_weights(self, m):
-        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-            nn.init.normal_(m.weight, 0.0, 0.02)
-            if m.bias is not None:
-                nn.init.zeros_(m.bias)
-        elif isinstance(m, nn.BatchNorm2d):
-            nn.init.ones_(m.weight)
-            nn.init.zeros_(m.bias)
-
-    def forward(self, images, labels):
-        h, w = images.size(-2), images.size(-1)
-        labels = self.labels_embedding(labels)
-        labels = labels.view(-1, self.embedding_channels, 1, 1).expand(-1, -1, h, w)
-        x = torch.cat([images, labels], dim=1)  # (N, in_channels + C_emb, 32, 32)
-        x = self.initial(x)
-        x = self.blocks(x)
-        logits = self.final(x).view(-1, 1)
-        return logits
-
-
-class CGAN(GAN):
-    def train_step(self, batch):
-        batch_size = batch["image"].size(0)
-        labels = batch["label"].to(self.device)
-
-        # (1) Update Discriminator
-        real_images = batch["image"].to(self.device)
-        real_logits = self.discriminator(real_images, labels)
-
-        noises = torch.randn(batch_size, self.latent_dim, 1, 1).to(self.device)
-        fake_images = self.generator(noises, labels).detach()
-        fake_logits = self.discriminator(fake_images, labels)
-
-        d_loss, d_real_loss, d_fake_loss = self.d_loss_fn(real_logits, fake_logits)
-
-        self.d_optimizer.zero_grad()
-        d_loss.backward()
-        self.d_optimizer.step()
-
-        # (2) Update Generator
-        noises = torch.randn(batch_size, self.latent_dim, 1, 1).to(self.device)
-        fake_images = self.generator(noises, labels)
-        fake_logits = self.discriminator(fake_images, labels)
-        g_loss = self.g_loss_fn(fake_logits)
-
-        self.g_optimizer.zero_grad()
-        g_loss.backward()
-        self.g_optimizer.step()
-
-        return dict(
-            d_loss=d_loss.item(),
-            real_loss=d_real_loss.item(),
-            fake_loss=d_fake_loss.item(),
-            g_loss=g_loss.item()
-        )
