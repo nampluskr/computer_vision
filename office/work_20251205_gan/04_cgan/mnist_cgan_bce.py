@@ -16,7 +16,9 @@ import torchvision.transforms as T
 
 from datasets import MNIST, get_train_loader
 from utils import set_seed, create_images, sample_latent, update_history, plot_images
-from cgan import CGAN, CGenerator32, CDiscriminator32
+from generator import CGenerator32
+from discriminator import CDiscriminator32
+from cgan import CGAN
 from trainer import fit
 
 
