@@ -88,7 +88,7 @@ class Generator64(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, latent_dim=100, out_channels=3, base=64, img_size=32):
+    def __init__(self, img_size=32, latent_dim=100, out_channels=3, base=64):
         super().__init__()
         self.latent_dim = latent_dim
         self.img_size = img_size
@@ -174,7 +174,7 @@ class CGenerator32(nn.Module):
 
 
 class CGenerator(nn.Module):
-    def __init__(self, latent_dim=100, out_channels=3, base=64, img_size=32,
+    def __init__(self, img_size=32, latent_dim=100, out_channels=3, base=64, 
                  num_classes=10, embedding_dim=64):
         super().__init__()
         self.latent_dim = latent_dim

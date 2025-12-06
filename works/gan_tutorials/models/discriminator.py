@@ -82,7 +82,7 @@ class Discriminator64(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, in_channels=3, base=64, img_size=32):
+    def __init__(self, img_size=32, in_channels=3, base=64):
         super().__init__()
         self.img_size = img_size
 
@@ -98,7 +98,7 @@ class Discriminator(nn.Module):
         blocks = []
         for i in range(num_blocks[img_size]):
             blocks.append(ConvBlock(out_channels, out_channels * 2))
-            out_channels *= out_channels
+            out_channels *= 2
         self.blocks = nn.Sequential(*blocks)
 
         self.final = nn.Conv2d(out_channels, 1, kernel_size=4, stride=1, padding=0, bias=False)
@@ -160,7 +160,7 @@ class CDiscriminator32(nn.Module):
 
 
 class CDiscriminator(nn.Module):
-    def __init__(self, in_channels=3, base=64, img_size=32,
+    def __init__(self, img_size=32, in_channels=3, base=64, 
                  num_classes=10, embedding_channels=1):
         super().__init__()
         self.img_size = img_size
@@ -210,7 +210,7 @@ class CDiscriminator(nn.Module):
 
 
 class ACDiscriminator(nn.Module):
-    def __init__(self, in_channels=3, base=64, img_size=32, num_classes=10):
+    def __init__(self, img_size=32, in_channels=3, base=64, num_classes=10):
         super().__init__()
         self.img_size = img_size
         self.num_classes = num_classes
